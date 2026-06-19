@@ -98,6 +98,4 @@ Files are automatically converted to 8kHz mono WAV before upload to minimize dat
 
 ## Made by
 
-[Kia Ashkan](https://github.com/kiaashkan) — with the help of Claude
-
-Telegram: [@kiaashkan](https://t.me/kiaashkan)
+[Kia Ashkan] Telegram: [@kiaashkan](https://t.me/kiaashkan)
