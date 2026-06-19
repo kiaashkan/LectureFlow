@@ -108,12 +108,12 @@ Telegram: [@kiaashkan](https://t.me/kiaashkan)
 
 اگه این پروژه بهت کمک کرد و خواستی حمایت کنی:
 
-**USDT — شبکه اتریوم (Ethereum / ERC-20):**
+**USDT — شبکه تتر (Tether ERC-20):**
 ```
 0x9C3287392fA08EbF13D8B31fEe27bE070C3e56CD
 ```
 
-**USDT — شبکه ترون (Tron / TRC-20):**
+**USDT — شبکه ترون (Tron TRC-20):**
 ```
 TJiV8kgAVxHqXka743abkn2jk7mhDWqmCa
 ```
