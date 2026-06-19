@@ -1,117 +1,180 @@
 # LectureFlow 🎙
 
-**AI-powered lecture assistant** — turns audio recordings into transcripts, formulas, terms & summaries.
+پلتفرم هوشمند تبدیل گفتار به متن و تحلیل محتوای آموزشی با استفاده از هوش مصنوعی.
 
-دستیار هوش مصنوعی برای دانشجویان — فایل صوتی کلاس رو آپلود کن و در چند دقیقه متن کامل، فرمول‌ها، اصطلاحات و خلاصه درس رو بگیر.
+فایل صوتی کلاس، جلسه یا سخنرانی خود را آپلود کنید و به‌صورت خودکار دریافت کنید:
 
-![Cloudflare](https://img.shields.io/badge/Cloudflare-Workers-F38020?style=flat&logo=cloudflare) ![Groq](https://img.shields.io/badge/Groq-Whisper-orange?style=flat) ![NVIDIA](https://img.shields.io/badge/NVIDIA-NIM-76B900?style=flat) ![Gemini](https://img.shields.io/badge/Google-Gemini-4285F4?style=flat)
+* متن کامل فایل صوتی
+* اصطلاحات تخصصی
+* استخراج فرمول‌ها
+* خلاصه تولیدشده توسط هوش مصنوعی
 
----
+این پروژه برای دانشجویان، پژوهشگران، اساتید و هر فردی که به تحلیل محتوای صوتی نیاز دارد طراحی شده است.
 
-## Features / ویژگی‌ها
-
-- 🎙 **Transcription** — تبدیل صوت به متن با Groq Whisper
-- 🧪 **Formula extraction** — استخراج فرمول‌های گفته‌شده (آمار، شیمی، داروسازی، ریاضی)
-- 💊 **Technical terms** — لیست اصطلاحات مهم درس
-- 📋 **Summary** — خلاصه نکات کلیدی
-- ⚡ **Two modes** — حالت سریع (NVIDIA) یا دقیق (NVIDIA + Gemini)
-- 🌙 **Dark / Light mode**
-- 📱 **Mobile friendly**
+![LectureFlow](https://img.shields.io/badge/Cloudflare-Workers-F38020?style=flat\&logo=cloudflare)
+![Groq](https://img.shields.io/badge/Groq-Whisper-orange?style=flat)
+![NVIDIA](https://img.shields.io/badge/NVIDIA-NIM-76B900?style=flat)
+![Gemini](https://img.shields.io/badge/Google-Gemini-4285F4?style=flat)
 
 ---
 
-## Tech Stack
+## امکانات
 
-| Service | Usage | Free |
-|---------|-------|------|
-| [Groq](https://console.groq.com) | Audio → Text (Whisper) | ✅ |
-| [NVIDIA NIM](https://build.nvidia.com) | Formula extraction (Llama 3.3 70B) | ✅ |
-| [Google Gemini](https://aistudio.google.com) | Terms, summary, validation | ✅ |
-| [Cloudflare Workers](https://workers.cloudflare.com) | Hosting & backend | ✅ |
+* 🎙 **تبدیل گفتار به متن** با استفاده از Groq Whisper
+* 🧪 **استخراج و اعتبارسنجی فرمول‌ها** از محتوای صوتی
+* 💊 **استخراج اصطلاحات تخصصی و کلیدی**
+* 📋 **تولید خلاصه هوشمند**
+* ⚡ **دو حالت تحلیل**
 
----
-
-## راه‌اندازی / Setup
-
-### ۱. دریافت API Key ها
-
-**Groq** (برای تبدیل صوت به متن):
-1. برو به [console.groq.com](https://console.groq.com)
-2. ثبت‌نام کن — بدون کارت بانکی
-3. از منو **API Keys** → **Create API Key** رو بزن
-4. کلید رو کپی کن (شروع میشه با `gsk_...`)
-
-**Google Gemini** (برای آنالیز متن):
-1. برو به [aistudio.google.com](https://aistudio.google.com)
-2. با اکانت گوگل وارد شو
-3. روی **Get API Key** → **Create API key** کلیک کن
-4. کلید رو کپی کن (شروع میشه با `AIza...`)
-
-**NVIDIA NIM** (برای استخراج فرمول):
-1. برو به [build.nvidia.com](https://build.nvidia.com)
-2. ثبت‌نام کن — بدون کارت بانکی
-3. از پروفایل → **API Keys** → **Generate Key** رو بزن
-4. کلید رو کپی کن (شروع میشه با `nvapi-...`)
+  * حالت سریع (NVIDIA NIM)
+  * حالت دقیق (NVIDIA NIM + Gemini)
+* 🌙 **پشتیبانی از حالت روشن و تاریک**
+* 📱 **سازگار با موبایل**
+* ☁️ **اجرای کاملاً سرورلس روی Cloudflare Workers**
 
 ---
 
-### ۲. Deploy روی Cloudflare Workers
+## معماری پروژه
 
-1. برو به [workers.cloudflare.com](https://workers.cloudflare.com) و ثبت‌نام کن (رایگانه)
-2. روی **Create Worker** کلیک کن
-3. کد پیش‌فرض رو پاک کن و محتوای `worker.js` رو جایگذاری کن
-4. روی **Deploy** کلیک کن
+```text
+فایل صوتی
+      │
+      ▼
+Groq Whisper
+      │
+      ▼
+متن استخراج‌شده
+      │
+      ▼
+NVIDIA NIM
+      │
+      ▼
+استخراج فرمول‌ها
+      │
+      ▼
+Gemini
+      │
+      ▼
+اعتبارسنجی + اصطلاحات + خلاصه
+```
 
 ---
 
-### ۳. اضافه کردن API Key ها به Cloudflare
+## فناوری‌های استفاده‌شده
 
-بعد از deploy، به تنظیمات Worker برو:
-
-1. Worker رو توی داشبورد Cloudflare باز کن
-2. برو به **Settings** → **Variables and Secrets**
-3. روی **+ Add** کلیک کن و این سه secret رو اضافه کن:
-
-| Name | Value |
-|------|-------|
-| `GROQ_API_KEY` | کلید Groq (`gsk_...`) |
-| `GEMINI_API_KEY` | کلید Gemini (`AIza...`) |
-| `NVIDIA_API_KEY` | کلید NVIDIA (`nvapi-...`) |
-
-4. دوباره **Deploy** کن
+| سرویس              | کاربرد                                    | نسخه رایگان |
+| ------------------ | ----------------------------------------- | ----------- |
+| Groq               | تبدیل صوت به متن (Whisper)                | ✅           |
+| NVIDIA NIM         | استخراج فرمول‌ها                          | ✅           |
+| Google Gemini      | خلاصه‌سازی، استخراج اصطلاحات و اعتبارسنجی | ✅           |
+| Cloudflare Workers | میزبانی و بک‌اند                          | ✅           |
 
 ---
 
-### ۴. تموم شد! ✅
+## راه‌اندازی
 
-آدرس Worker رو باز کن (مثلاً `your-worker.workers.dev`) و فایل صوتی کلاست رو آپلود کن.
+### ۱. دریافت کلیدهای API
+
+#### Groq (تبدیل صوت به متن)
+
+1. وارد https://console.groq.com شوید.
+2. حساب کاربری ایجاد کنید.
+3. وارد بخش API Keys شوید.
+4. یک کلید جدید بسازید.
+5. کلید خود را کپی کنید.
+
+#### Google Gemini (تحلیل محتوا)
+
+1. وارد https://aistudio.google.com شوید.
+2. با حساب گوگل وارد شوید.
+3. روی Get API Key کلیک کنید.
+4. یک API Key جدید ایجاد کنید.
+5. کلید خود را کپی کنید.
+
+#### NVIDIA NIM (استخراج فرمول)
+
+1. وارد https://build.nvidia.com شوید.
+2. حساب کاربری ایجاد کنید.
+3. وارد بخش API Keys شوید.
+4. یک کلید جدید بسازید.
+5. کلید خود را کپی کنید.
+
+---
+
+### ۲. استقرار روی Cloudflare Workers
+
+1. وارد Cloudflare Workers شوید.
+2. یک Worker جدید ایجاد کنید.
+3. کد پیش‌فرض را حذف کنید.
+4. محتوای فایل `worker.js` را جایگزین کنید.
+5. روی Deploy کلیک کنید.
+
+---
+
+### ۳. تنظیم متغیرهای محرمانه
+
+پس از استقرار Worker:
+
+Settings → Variables and Secrets
+
+متغیرهای زیر را ایجاد کنید:
+
+| نام متغیر      | مقدار       |
+| -------------- | ----------- |
+| GROQ_API_KEY   | کلید Groq   |
+| GEMINI_API_KEY | کلید Gemini |
+| NVIDIA_API_KEY | کلید NVIDIA |
+
+پس از ذخیره، دوباره Deploy کنید.
+
+---
+
+### ۴. استفاده از برنامه
+
+آدرس Worker خود را باز کنید:
+
+```text
+https://your-worker.workers.dev
+```
+
+سپس فایل صوتی موردنظر را آپلود کنید تا تحلیل به‌صورت خودکار انجام شود.
 
 ---
 
 ## فرمت‌های صوتی پشتیبانی‌شده
 
-`mp3` · `m4a` · `wav` · `ogg` · `webm`
+* mp3
+* m4a
+* wav
+* ogg
+* webm
 
-فایل‌ها قبل از ارسال به‌صورت خودکار به WAV با کیفیت بهینه تبدیل میشن تا حجم کمتری مصرف بشه.
-
----
-
-## سازنده / Made by
-
-Kia Ashkan  Telegram: [@kiaashkan](https://t.me/kiaashkan)
+فایل‌ها پیش از پردازش به فرمت مناسب تبدیل می‌شوند تا حجم مصرفی کاهش یابد.
 
 ---
 
-## حمایت مالی / Support
+## حمایت از پروژه ❤️
 
-اگه این پروژه بهت کمک کرد و خواستی حمایت کنی:
+اگر LectureFlow برای شما مفید بوده و مایل به حمایت از توسعه آن هستید، می‌توانید از طریق آدرس‌های زیر کمک مالی ارسال کنید.
 
-**USDT — شبکه تتر (Tether ERC-20):**
-```
+### تتر (شبکه‌های EVM)
+
+```text
 0x9C3287392fA08EbF13D8B31fEe27bE070C3e56CD
 ```
 
-**USDT — شبکه ترون (Tron TRC-20):**
-```
+### ترون (TRX / TRC20)
+
+```text
 TJiV8kgAVxHqXka743abkn2jk7mhDWqmCa
 ```
+
+
+---
+
+## سازنده
+
+KiA Ashkan
+
+تلگرام:
+https://t.me/kiaashkan
