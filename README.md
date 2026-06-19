@@ -168,24 +168,11 @@ If LectureFlow helps you and you'd like to support future development, donations
 0x9C3287392fA08EbF13D8B31fEe27bE070C3e56CD
 ```
 
-Supported networks:
-
-
 ### TRON (TRX / TRC20)
 
 ```text
 TJiV8kgAVxHqXka743abkn2jk7mhDWqmCa
 ```
-
-Every contribution helps improve the project and keep it freely available for everyone.
-
----
-
-## License
-
-MIT License
-
-Feel free to use, modify, and distribute this project.
 
 ---
 
