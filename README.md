@@ -1,33 +1,77 @@
 # LectureFlow 🎙
 
-AI-powered lecture assistant — turns audio recordings into transcripts, formulas, terms & summaries.
+AI-powered speech-to-text and lecture analysis platform.
 
-Built for students who record their university lectures and want to quickly extract the key content.
+Upload a lecture recording and automatically generate:
 
-![LectureFlow](https://img.shields.io/badge/Cloudflare-Workers-F38020?style=flat&logo=cloudflare) ![Groq](https://img.shields.io/badge/Groq-Whisper-orange?style=flat) ![NVIDIA](https://img.shields.io/badge/NVIDIA-NIM-76B900?style=flat) ![Gemini](https://img.shields.io/badge/Google-Gemini-4285F4?style=flat)
+* Transcript
+* Technical terms
+* Formula extraction
+* AI-generated summaries
+
+Built for students, researchers, educators, and anyone who needs AI-powered lecture or speech analysis.
+
+![LectureFlow](https://img.shields.io/badge/Cloudflare-Workers-F38020?style=flat\&logo=cloudflare)
+![Groq](https://img.shields.io/badge/Groq-Whisper-orange?style=flat)
+![NVIDIA](https://img.shields.io/badge/NVIDIA-NIM-76B900?style=flat)
+![Gemini](https://img.shields.io/badge/Google-Gemini-4285F4?style=flat)
 
 ---
 
 ## Features
 
-- 🎙 **Transcription** — converts audio to text using Groq Whisper
-- 🧪 **Formula extraction** — detects spoken formulas (statistics, chemistry, pharmacology, math)
-- 💊 **Technical terms** — lists key terms from the lecture
-- 📋 **Summary** — generates key takeaways
-- ⚡ **Two analysis modes** — Fast (NVIDIA only) or Accurate (NVIDIA + Gemini)
-- 🌙 **Dark / Light mode**
-- 📱 **Mobile friendly**
+* 🎙 **Transcription** — converts audio to text using Groq Whisper
+* 🧪 **Formula extraction & validation** — detects and validates spoken formulas from lectures
+* 💊 **Technical terms extraction** — identifies important terminology
+* 📋 **AI Summary** — generates concise lecture summaries
+* ⚡ **Two analysis modes**
+
+  * Fast Mode (NVIDIA NIM)
+  * Accurate Mode (NVIDIA NIM + Gemini)
+* 🌙 **Dark / Light mode**
+* 📱 **Mobile friendly**
+* ☁️ **Serverless deployment on Cloudflare Workers**
+
+---
+
+## Architecture
+
+Audio Recording
+
+↓
+
+Groq Whisper
+
+↓
+
+Transcript
+
+↓
+
+NVIDIA NIM
+
+↓
+
+Formula Detection
+
+↓
+
+Gemini
+
+↓
+
+Validation + Terms + Summary
 
 ---
 
 ## Tech Stack
 
-| Service | Usage | Free tier |
-|---------|-------|-----------|
-| [Groq](https://console.groq.com) | Audio transcription (Whisper) | ✅ Free |
-| [NVIDIA NIM](https://build.nvidia.com) | Formula extraction (Llama 3.3 70B) | ✅ Free |
-| [Google Gemini](https://aistudio.google.com) | Terms, summary, formula validation | ✅ Free |
-| [Cloudflare Workers](https://workers.cloudflare.com) | Hosting & backend | ✅ Free |
+| Service            | Usage                              | Free Tier |
+| ------------------ | ---------------------------------- | --------- |
+| Groq               | Audio transcription (Whisper)      | ✅ Free    |
+| NVIDIA NIM         | Formula extraction (Llama 3.3 70B) | ✅ Free    |
+| Google Gemini      | Summary, terms, validation         | ✅ Free    |
+| Cloudflare Workers | Hosting & backend                  | ✅ Free    |
 
 ---
 
@@ -35,67 +79,124 @@ Built for students who record their university lectures and want to quickly extr
 
 ### 1. Get API Keys
 
-**Groq** (for transcription):
-1. Go to [console.groq.com](https://console.groq.com)
-2. Sign up with email — no credit card needed
-3. Go to **API Keys** → **Create API Key**
-4. Copy the key (starts with `gsk_...`)
+#### Groq (Transcription)
 
-**Google Gemini** (for analysis):
-1. Go to [aistudio.google.com](https://aistudio.google.com)
-2. Sign in with your Google account
-3. Click **Get API Key** → **Create API key**
-4. Copy the key (starts with `AIza...`)
+1. Go to https://console.groq.com
+2. Create an account
+3. Open API Keys
+4. Create a new API key
+5. Copy your key (`gsk_...`)
 
-**NVIDIA NIM** (for formula extraction):
-1. Go to [build.nvidia.com](https://build.nvidia.com)
-2. Sign up with email — no credit card needed
-3. Click your profile → **API Keys** → **Generate Key**
-4. Copy the key (starts with `nvapi-...`)
+#### Google Gemini (Analysis)
+
+1. Go to https://aistudio.google.com
+2. Sign in
+3. Click Get API Key
+4. Create API Key
+5. Copy your key (`AIza...`)
+
+#### NVIDIA NIM (Formula Extraction)
+
+1. Go to https://build.nvidia.com
+2. Create an account
+3. Open API Keys
+4. Generate a key
+5. Copy your key (`nvapi-...`)
 
 ---
 
 ### 2. Deploy to Cloudflare Workers
 
-1. Go to [workers.cloudflare.com](https://workers.cloudflare.com) and sign up (free)
-2. Click **Create Worker**
-3. Delete the default code and paste the contents of `worker.js`
-4. Click **Deploy**
+1. Go to https://workers.cloudflare.com
+2. Create a Worker
+3. Replace the default code with `worker.js`
+4. Deploy
 
 ---
 
-### 3. Add API Keys to Cloudflare
+### 3. Configure Secrets
 
-After deploying, go to your Worker's settings:
+Open your Worker dashboard.
 
-1. Open your Worker in the Cloudflare dashboard
-2. Go to **Settings** → **Variables and Secrets**
-3. Click **+ Add** and add these three secrets:
+Go to:
 
-| Name | Value |
-|------|-------|
-| `GROQ_API_KEY` | your Groq key (`gsk_...`) |
-| `GEMINI_API_KEY` | your Gemini key (`AIza...`) |
-| `NVIDIA_API_KEY` | your NVIDIA key (`nvapi-...`) |
+Settings → Variables and Secrets
 
-4. Click **Deploy** again
+Create the following secrets:
+
+| Name           | Value     |
+| -------------- | --------- |
+| GROQ_API_KEY   | gsk_...   |
+| GEMINI_API_KEY | AIza...   |
+| NVIDIA_API_KEY | nvapi-... |
+
+Deploy again after saving.
 
 ---
 
-### 4. Done!
+### 4. Start Using LectureFlow
 
-Open your Worker URL (e.g. `your-worker.workers.dev`) and start uploading lectures.
+Open your Worker URL:
+
+```text
+https://your-worker.workers.dev
+```
+
+Upload an audio file and let LectureFlow analyze it automatically.
 
 ---
 
 ## Supported Audio Formats
 
-`mp3` · `m4a` · `wav` · `ogg` · `webm`
+* mp3
+* m4a
+* wav
+* ogg
+* webm
 
-Files are automatically converted to 8kHz mono WAV before upload to minimize data usage.
+Files are automatically converted to optimized WAV format before processing.
 
 ---
 
-## Made by
+## Support the Project ❤️
 
-KiA Ashkan Telegram: [@kiaashkan](https://t.me/kiaashkan)
+If LectureFlow helps you and you'd like to support future development, donations are appreciated.
+
+### USDT (EVM Networks)
+
+```text
+0x9C3287392fA08EbF13D8B31fEe27bE070C3e56CD
+```
+
+Supported networks:
+
+* Ethereum
+* BNB Smart Chain (BSC)
+* Polygon
+* Arbitrum
+* Base
+* Other EVM-compatible networks
+
+### TRON (TRX / TRC20)
+
+```text
+TJiV8kgAVxHqXka743abkn2jk7mhDWqmCa
+```
+
+Every contribution helps improve the project and keep it freely available for everyone.
+
+---
+
+## License
+
+MIT License
+
+Feel free to use, modify, and distribute this project.
+
+---
+
+## Author
+
+KiA Ashkan
+
+Telegram: https://t.me/kiaashkan
