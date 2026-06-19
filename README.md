@@ -170,12 +170,6 @@ If LectureFlow helps you and you'd like to support future development, donations
 
 Supported networks:
 
-* Ethereum
-* BNB Smart Chain (BSC)
-* Polygon
-* Arbitrum
-* Base
-* Other EVM-compatible networks
 
 ### TRON (TRX / TRC20)
 
