@@ -106,12 +106,12 @@ Kia Ashkan  Telegram: [@kiaashkan](https://t.me/kiaashkan)
 
 اگه این پروژه بهت کمک کرد و خواستی حمایت کنی:
 
-**USDT (ERC-20):**
+**USDT (ERC-20):** تتر
 ```
 0x9C3287392fA08EbF13D8B31fEe27bE070C3e56CD
 ```
 
-**USDT (TRC-20):**
+**USDT (TRC-20):**ترون
 ```
 TJiV8kgAVxHqXka743abkn2jk7mhDWqmCa
 ```
