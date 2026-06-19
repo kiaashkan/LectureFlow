@@ -98,9 +98,7 @@
 
 ## سازنده / Made by
 
-[Kia Ashkan](https://github.com/kiaashkan) — with the help of Claude
-
-Telegram: [@kiaashkan](https://t.me/kiaashkan)
+Kia Ashkan  Telegram: [@kiaashkan](https://t.me/kiaashkan)
 
 ---
 
@@ -117,5 +115,3 @@ Telegram: [@kiaashkan](https://t.me/kiaashkan)
 ```
 TJiV8kgAVxHqXka743abkn2jk7mhDWqmCa
 ```
-
-> ⚠️ قبل از واریز، شبکه رو با آدرس مطابقت بده — اشتباه شبکه = از دست رفتن پول
