@@ -98,7 +98,9 @@
 
 ## سازنده / Made by
 
-Kia Ashkan  Telegram: [@kiaashkan](https://t.me/kiaashkan)
+[Kia Ashkan](https://github.com/kiaashkan) — with the help of Claude
+
+Telegram: [@kiaashkan](https://t.me/kiaashkan)
 
 ---
 
@@ -106,12 +108,14 @@ Kia Ashkan  Telegram: [@kiaashkan](https://t.me/kiaashkan)
 
 اگه این پروژه بهت کمک کرد و خواستی حمایت کنی:
 
-**USDT (ERC-20):** تتر
+**USDT — شبکه اتریوم (Ethereum / ERC-20):**
 ```
 0x9C3287392fA08EbF13D8B31fEe27bE070C3e56CD
 ```
 
-**USDT (TRC-20):**ترون
+**USDT — شبکه ترون (Tron / TRC-20):**
 ```
 TJiV8kgAVxHqXka743abkn2jk7mhDWqmCa
 ```
+
+> ⚠️ قبل از واریز، شبکه رو با آدرس مطابقت بده — اشتباه شبکه = از دست رفتن پول
