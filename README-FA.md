@@ -4,6 +4,7 @@
 
 دستیار هوش مصنوعی برای دانشجویان — فایل صوتی کلاس رو آپلود کن و در چند دقیقه متن کامل، فرمول‌ها، اصطلاحات و خلاصه درس رو بگیر.
 
+![Cloudflare](https://img.shields.io/badge/Cloudflare-Workers-F38020?style=flat&logo=cloudflare) ![Groq](https://img.shields.io/badge/Groq-Whisper-orange?style=flat) ![NVIDIA](https://img.shields.io/badge/NVIDIA-NIM-76B900?style=flat) ![Gemini](https://img.shields.io/badge/Google-Gemini-4285F4?style=flat)
 
 ---
 
@@ -98,3 +99,19 @@
 ## سازنده / Made by
 
 Kia Ashkan  Telegram: [@kiaashkan](https://t.me/kiaashkan)
+
+---
+
+## حمایت مالی / Support
+
+اگه این پروژه بهت کمک کرد و خواستی حمایت کنی:
+
+**USDT (ERC-20):**
+```
+0x9C3287392fA08EbF13D8B31fEe27bE070C3e56CD
+```
+
+**USDT (TRC-20):**
+```
+TJiV8kgAVxHqXka743abkn2jk7mhDWqmCa
+```
