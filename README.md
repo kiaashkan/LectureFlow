@@ -16,6 +16,7 @@ Built for students, researchers, educators, and anyone who needs AI-powered lect
 ![NVIDIA](https://img.shields.io/badge/NVIDIA-NIM-76B900?style=flat)
 ![Gemini](https://img.shields.io/badge/Google-Gemini-4285F4?style=flat)
 
+🔗 **Live Demo:** [lf.kiaashkan.workers.dev](https://lf.kiaashkan.workers.dev)
 ---
 
 ## Features
