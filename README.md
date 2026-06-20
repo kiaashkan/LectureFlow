@@ -17,6 +17,10 @@ Built for students, researchers, educators, and anyone who needs AI-powered lect
 ![Gemini](https://img.shields.io/badge/Google-Gemini-4285F4?style=flat)
 
 🔗 **Live Demo:** [lf.kiaashkan.workers.dev](https://lf.kiaashkan.workers.dev)
+
+📱 **Android App (Open Source):**
+https://github.com/kiaashkan/LectureFlow-app
+
 ---
 
 ## Features
@@ -29,6 +33,7 @@ Built for students, researchers, educators, and anyone who needs AI-powered lect
 
   * Fast Mode (NVIDIA NIM)
   * Accurate Mode (NVIDIA NIM + Gemini)
+* 📱 **Android app available** — open-source Android client
 * 🌙 **Dark / Light mode**
 * 📱 **Mobile friendly**
 * ☁️ **Serverless deployment on Cloudflare Workers**
@@ -62,6 +67,18 @@ Gemini
 ↓
 
 Validation + Terms + Summary
+
+---
+
+## Android App
+
+LectureFlow is also available as an open-source Android application.
+
+Repository:
+
+https://github.com/kiaashkan/LectureFlow-app
+
+Build it yourself, customize it, or connect it to your own deployment.
 
 ---
 
@@ -161,8 +178,6 @@ Files are automatically converted to optimized WAV format before processing.
 
 ## Support the Project ❤️
 
-
-
 ### USDT (BSC / BEP20)
 
 ```text
@@ -181,4 +196,5 @@ TJiV8kgAVxHqXka743abkn2jk7mhDWqmCa
 
 KiA Ashkan
 
-Telegram: https://t.me/kiaashkan
+Telegram:
+https://t.me/kiaashkan
