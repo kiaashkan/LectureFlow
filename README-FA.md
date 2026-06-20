@@ -11,10 +11,12 @@
 
 این پروژه برای دانشجویان، پژوهشگران، مدرسین و هر فردی که به تحلیل محتوای صوتی نیاز دارد طراحی شده است.
 
-![LectureFlow](https://img.shields.io/badge/Cloudflare-Workers-F38020?style=flat\&logo=cloudflare)
-![Groq](https://img.shields.io/badge/Groq-Whisper-orange?style=flat)
-![NVIDIA](https://img.shields.io/badge/NVIDIA-NIM-76B900?style=flat)
-![Gemini](https://img.shields.io/badge/Google-Gemini-4285F4?style=flat)
+<p align="right">
+  <img src="https://img.shields.io/badge/Cloudflare-Workers-F38020?style=flat&logo=cloudflare">
+  <img src="https://img.shields.io/badge/Groq-Whisper-orange?style=flat">
+  <img src="https://img.shields.io/badge/NVIDIA-NIM-76B900?style=flat">
+  <img src="https://img.shields.io/badge/Google-Gemini-4285F4?style=flat">
+</p>
 
 🔗 **نسخه آنلاین:** https://lf.kiaashkan.workers.dev
 
