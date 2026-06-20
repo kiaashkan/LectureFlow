@@ -1,6 +1,63 @@
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
+
+    // ── Track page view ──
+    if (request.method === 'GET' && url.pathname === '/') {
+      try {
+        env.ANALYTICS.writeDataPoint({
+          blobs: [request.headers.get('cf-ipcountry') || 'XX'],
+          indexes: ['pageview']
+        });
+      } catch (_) {}
+      return new Response(mainPage(), { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
+    }
+
+    // ── Stats endpoint ──
+    if (request.method === 'GET' && url.pathname === '/stats') {
+      try {
+        const token = env.CF_API_TOKEN;
+        const accountId = env.CF_ACCOUNT_ID;
+        const now = new Date();
+        const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
+        const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+        const yearStart  = new Date(now.getFullYear(), 0, 1).toISOString();
+
+        const query = async (since) => {
+          const r = await fetch(
+            `https://api.cloudflare.com/client/v4/accounts/${accountId}/analytics_engine/sql`,
+            {
+              method: 'POST',
+              headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'text/plain' },
+              body: `SELECT count() AS c FROM page_views WHERE timestamp > toDateTime(${Math.floor(new Date(since).getTime()/1000)})`
+            }
+          );
+          const txt = await r.text();
+          try {
+            const d = JSON.parse(txt);
+            if (!r.ok) return { error: d, count: 0 };
+            return { count: Number(d.data?.[0]?.c || 0) };
+          } catch(e) {
+            return { error: txt.substring(0,200), count: 0 };
+          }
+        };
+
+        const [today, month, year] = await Promise.all([
+          query(todayStart), query(monthStart), query(yearStart)
+        ]);
+
+        return new Response(JSON.stringify({
+          today: today.count, month: month.count, year: year.count
+        }), {
+          headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+        });
+      } catch (e) {
+        return new Response(JSON.stringify({ today: 0, month: 0, year: 0, error: e.message }), {
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+    }
+
     if (request.method === 'GET') return new Response(mainPage(), { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
 
     if (request.method === 'POST' && url.pathname === '/process') {
@@ -407,6 +464,11 @@ body.dark .err{background:#3a1620;border-color:#5c2230;color:#fda4af;}
     <div style="margin-top:10px;font-size:11px;color:var(--mu);">
       Made by <span style="font-weight:600;color:var(--td);">Kia Ashkan</span> with the help of Claude
     </div>
+    <div style="margin-top:10px;display:flex;gap:16px;font-size:11px;color:var(--mu);flex-wrap:wrap;">
+      <span>👁 Today: <strong id="statToday" style="color:var(--td)">—</strong></span>
+      <span>📅 Month: <strong id="statMonth" style="color:var(--td)">—</strong></span>
+      <span>📆 Year: <strong id="statYear" style="color:var(--td)">—</strong></span>
+    </div>
   </div>
 
 </div>
@@ -414,6 +476,15 @@ body.dark .err{background:#3a1620;border-color:#5c2230;color:#fda4af;}
 <script>
 let selFile=null,rData={};
 const TARGET_SR=8000,CHUNK_SECS=720;
+
+// ── Load stats ──
+(function(){
+  fetch('/stats').then(function(r){return r.json();}).then(function(d){
+    document.getElementById('statToday').textContent=d.today||0;
+    document.getElementById('statMonth').textContent=d.month||0;
+    document.getElementById('statYear').textContent=d.year||0;
+  }).catch(function(){});
+})();
 
 function toggleTheme(){
   const isDark=document.body.classList.contains('dark');
