@@ -162,7 +162,7 @@ Files are automatically converted to optimized WAV format before processing.
 
 If LectureFlow helps you and you'd like to support future development, donations are appreciated.
 
-### USDT (EVM Networks)
+### USDT (Tether Networks)
 
 ```text
 0x9C3287392fA08EbF13D8B31fEe27bE070C3e56CD
