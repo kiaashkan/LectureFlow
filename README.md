@@ -161,7 +161,7 @@ Files are automatically converted to optimized WAV format before processing.
 
 ## Support the Project ❤️
 
-If LectureFlow helps you and you'd like to support future development, donations are appreciated.
+
 
 ### USDT (BSC / BEP20)
 
