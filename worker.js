@@ -413,7 +413,7 @@ body.dark .err{background:#3a1620;border-color:#5c2230;color:#fda4af;}
     <div class="abar">
       <button class="abtn" id="cpbtn" onclick="cpTxt()">📋 Copy text</button>
       <button class="abtn" onclick="dlTxt()">⬇ Download .txt</button>
-      <button class="abtn" onclick="dlPdf()">📄 Download PDF</button>
+      <button class="abtn" id="pdfBtn" onclick="dlPdf()">📄 Download PDF</button>
     </div>
     <div class="tabs">
       <div class="tab on" onclick="showTab('tr')">Transcript</div>
@@ -477,7 +477,15 @@ body.dark .err{background:#3a1620;border-color:#5c2230;color:#fda4af;}
 let selFile=null,rData={};
 const TARGET_SR=8000,CHUNK_SECS=720;
 
-// ── Load stats ──
+// ── Hide PDF button in WebView ──
+(function(){
+  var ua=navigator.userAgent;
+  var isWebView=ua.indexOf('wv')>-1||ua.indexOf('WebView')>-1||(ua.indexOf('Android')>-1&&ua.indexOf('Version/')>-1);
+  if(isWebView){
+    var btn=document.getElementById('pdfBtn');
+    if(btn){btn.style.display='none';}
+  }
+})();
 (function(){
   fetch('/stats').then(function(r){return r.json();}).then(function(d){
     document.getElementById('statToday').textContent=d.today||0;
@@ -541,8 +549,8 @@ function prog(pct,stage){
 
 function resample(input,inRate,outRate){
   if(inRate===outRate)return input;
-  var ratio=inRate/outRate,outLen=Math.floor(input.length/ratio),out=new Float32Array(outLen);
-  for(var i=0;i<outLen;i++){var p=i*ratio,idx=Math.floor(p),fr=p-idx;out[i]=(input[idx]||0)+((input[idx+1]||0)-(input[idx]||0))*fr;}
+  var step=inRate/outRate,outLen=Math.floor(input.length/step),out=new Float32Array(outLen);
+  for(var i=0;i<outLen;i++)out[i]=input[Math.floor(i*step)];
   return out;
 }
 
@@ -685,15 +693,31 @@ function dlTxt(){
   document.body.appendChild(a);a.click();document.body.removeChild(a);
 }
 function dlPdf(){
-  var n=baseName(),w=window.open('','_blank');
+  var n=baseName();
+  var txt=getTx();
+  // Android WebView: window.open doesn't work, fallback to txt download
+  if(!window.open||navigator.userAgent.indexOf('wv')>-1||navigator.userAgent.indexOf('WebView')>-1){
+    var a=document.createElement('a');
+    a.href=URL.createObjectURL(new Blob([txt],{type:'text/plain;charset=utf-8'}));
+    a.download=n+'_notes.txt';
+    document.body.appendChild(a);a.click();document.body.removeChild(a);
+    return;
+  }
+  var w=window.open('','_blank');
+  if(!w){
+    var a=document.createElement('a');
+    a.href=URL.createObjectURL(new Blob([txt],{type:'text/plain;charset=utf-8'}));
+    a.download=n+'_notes.txt';
+    document.body.appendChild(a);a.click();document.body.removeChild(a);
+    return;
+  }
   var html='<!DOCTYPE html><html><head><meta charset="UTF-8"><title>'+n+'<\/title>';
   html+='<style>body{font-family:Arial,sans-serif;font-size:13px;line-height:1.8;padding:40px;max-width:800px;margin:0 auto;}pre{white-space:pre-wrap;word-break:break-word;}<\/style>';
   html+='<\/head><body><h1 style="font-size:18px">'+n+'<\/h1>';
-  html+='<pre>'+getTx().replace(/</g,'&lt;').replace(/>/g,'&gt;')+'<\/pre>';
+  html+='<pre>'+txt.replace(/</g,'&lt;').replace(/>/g,'&gt;')+'<\/pre>';
   html+='<scr'+'ipt>window.onload=function(){window.print();}<\/scr'+'ipt>';
   html+='<\/body><\/html>';
-  w.document.write(html);
-  w.document.close();
+  w.document.write(html);w.document.close();
 }
 <\/script>
 </body>
