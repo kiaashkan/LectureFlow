@@ -1,5 +1,11 @@
 # LectureFlow 🎙
 
+🌐 Documentation:
+
+* 🇺🇸 English: README.md
+* 🇮🇷 Persian (فارسی): [README-FA.md](https://github.com/kiaashkan/LectureFlow/blob/main/README-FA.md)
+
+
 AI-powered speech-to-text and lecture analysis platform.
 
 Upload a lecture recording and automatically generate:
