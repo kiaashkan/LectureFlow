@@ -39,37 +39,35 @@ https://github.com/kiaashkan/LectureFlow-app
 * ☁️ **Serverless deployment on Cloudflare Workers**
 
 ---
-
 ## Architecture
 
+```text
 Audio Recording
-
-↓
-
+      │
+      ▼
 Groq Whisper
-
-↓
-
+(Speech-to-Text)
+      │
+      ▼
 Transcript
-
-↓
-
+      │
+      ▼
 NVIDIA NIM
-
-↓
-
-Formula Detection
-
-↓
-
-Gemini
-
-↓
-
-Validation + Terms + Summary
-
----
-
+(Formula Detection)
+      │
+      ▼
+Google Gemini
+(Validation & Analysis)
+      │
+      ▼
+┌─────────────────────────┐
+│   Final Results         │
+├─────────────────────────┤
+│ • Formula Validation    │
+│ • Technical Terms       │
+│ • AI Summary            │
+└─────────────────────────┘
+```
 ## Android App
 
 LectureFlow is also available as an open-source Android application.
