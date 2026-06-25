@@ -2,7 +2,7 @@
 
 🌐 Documentation:
 
-* 🇺🇸 [English](https://github.com/kiaashkan/LectureFlow/edit/main/README.md)
+* 🇺🇸 [English](https://github.com/kiaashkan/LectureFlow/blob/main/README.md)
 * 🇮🇷 [فارسی](https://github.com/kiaashkan/LectureFlow/blob/main/README-FA.md)
 
 
