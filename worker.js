@@ -49,13 +49,12 @@ export default {
         if (action === 'transcribe') {
           const file = fd.get('file');
           if (!file) return new Response('No file', { status: 400 });
-          const PROMPT = 'English university lecture: statistics, pharmacology, chemistry, biochemistry. Formulas: p-hat=p\u0302, q-hat=q\u0302, x-bar=x\u0305, mu=\u03bc, sigma=\u03c3, z-star=z*, CI=p\u0302\u00b1z*\u221a(p\u0302q\u0302/n), E=z*\u221a(p\u0302q\u0302/n), SE=\u221a(p\u0302q\u0302/n), n=p\u0302q\u0302(z*/E)\u00b2, H\u2080, H\u2081, t\u00bd=0.693/ke, CL=Dose/AUC, F=(AUCoral/AUCiv)\u00d7100%, pH=pKa+log([A\u207b]/[HA]). Write numbers as digits.';
           const gf = new FormData();
           gf.append('file', file, file.name || 'audio.wav');
           gf.append('model', 'whisper-large-v3-turbo');
           gf.append('response_format', 'text');
           gf.append('language', 'en');
-          gf.append('prompt', PROMPT);
+          gf.append('prompt', 'English university lecture: statistics, pharmacology, chemistry, biochemistry. Formulas: p-hat=p\u0302, q-hat=q\u0302, x-bar=x\u0305, mu=\u03bc, sigma=\u03c3, z-star=z*, CI=p\u0302\u00b1z*\u221a(p\u0302q\u0302/n), E=z*\u221a(p\u0302q\u0302/n), SE=\u221a(p\u0302q\u0302/n), n=p\u0302q\u0302(z*/E)\u00b2, H\u2080, H\u2081, t\u00bd=0.693/ke, CL=Dose/AUC, F=(AUCoral/AUCiv)\u00d7100%, pH=pKa+log([A\u207b]/[HA]). Write numbers as digits.');
           const gr = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
             method: 'POST', headers: { 'Authorization': `Bearer ${env.GROQ_API_KEY}` }, body: gf
           });
@@ -68,14 +67,6 @@ export default {
           const text = fd.get('text') || '';
           const opts = JSON.parse(fd.get('opts') || '{}');
           const useBoth = fd.get('useBoth') === 'true';
-          const lang = fd.get('lang') || 'en';
-
-          const LANG_NAMES = {
-            en:'English', fa:'Persian (Farsi)', ar:'Arabic', de:'German',
-            fr:'French', es:'Spanish', ru:'Russian', zh:'Chinese (Simplified)',
-            ja:'Japanese', tr:'Turkish', hi:'Hindi', pt:'Portuguese (Brazilian)'
-          };
-          const targetLang = LANG_NAMES[lang] || 'English';
 
           const safeJson = (raw, fb = {}) => {
             try {
@@ -84,34 +75,6 @@ export default {
               return JSON.parse(m ? m[0] : c);
             } catch { return fb; }
           };
-
-          const GURL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${env.GEMINI_API_KEY}`;
-          const GH = { 'Content-Type': 'application/json' };
-
-          const geminiCall = (prompt, maxTokens) => fetch(GURL, {
-            method: 'POST', headers: GH,
-            body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { temperature: 0.1, maxOutputTokens: maxTokens } })
-          }).then(async r => { const d = await r.json(); return safeJson(d.candidates?.[0]?.content?.parts?.[0]?.text || '{}', {}); }).catch(() => ({}));
-
-          // Translate transcript if not English
-          let translatedText = text;
-          if (lang !== 'en') {
-            try {
-              const CHUNK = 12000;
-              const chunks = [];
-              for (let i = 0; i < text.length; i += CHUNK) chunks.push(text.substring(i, i + CHUNK));
-              const translated = await Promise.all(chunks.map(chunk =>
-                fetch(GURL, {
-                  method: 'POST', headers: GH,
-                  body: JSON.stringify({
-                    contents: [{ parts: [{ text: `Translate the following university lecture text to ${targetLang}. Keep all formulas, numbers, and technical notation exactly as they are. Return ONLY the translated text, nothing else.\n\n"""${chunk}"""` }] }],
-                    generationConfig: { temperature: 0.1, maxOutputTokens: 8192 }
-                  })
-                }).then(async r => { const d = await r.json(); return d.candidates?.[0]?.content?.parts?.[0]?.text || chunk; }).catch(() => chunk)
-              ));
-              translatedText = translated.join(' ');
-            } catch(_) { translatedText = text; }
-          }
 
           const FSYS = `You are an expert formula extractor for university science lectures (statistics, pharmacology, chemistry, biochemistry).
 Extract EVERY formula or equation mentioned, even if only described verbally.
@@ -127,32 +90,45 @@ Verbal to notation:
 - "clearance" -> CL = Dose/AUC
 - "bioavailability" -> F = (AUC_oral/AUC_iv) \u00d7 100%
 - "henderson hasselbalch" -> pH = pKa + log([A\u207b]/[HA])
-Formula names and context must be in ${targetLang}.
 Return ONLY valid JSON: {"formulas":[{"formula":"...","name":"...","type":"statistical|mathematical|chemical|pharmacological|other","context":"exact quote max 20 words"}]}
 If no formulas found return: {"formulas":[]}`;
 
           const FUSER = `Transcript:\n"""\n${text}\n"""\nExtract ALL formulas including verbal descriptions. Return only JSON.`;
-          const TPROMPT = `Analyze this university lecture transcript. Return ONLY valid JSON with no extra text.
-All terms and key points MUST be written in ${targetLang}.
-{"terms":[{"term":"..."}],"points":["..."]}
-Rules: 10-20 important technical terms, 5-8 key takeaways. Everything in ${targetLang}.
+          const TPROMPT = `Analyze this university lecture transcript. Return ONLY valid JSON with no extra text:
+{"terms":[{"term":"Confidence Interval"},{"term":"Sample Proportion"}],"points":["Key point 1","Key point 2"]}
+Rules: 10-20 important technical terms, 5-8 key takeaways.
 TRANSCRIPT:\n"""\n${text.substring(0, 16000)}\n"""`;
 
-          const nvidiaCall = () => fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
-            method: 'POST',
-            headers: { 'Authorization': `Bearer ${env.NVIDIA_API_KEY}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              model: 'meta/llama-3.3-70b-instruct',
-              messages: [{ role: 'system', content: FSYS }, { role: 'user', content: FUSER }],
-              temperature: 0.1, max_tokens: 4000, response_format: { type: 'json_object' }
-            })
-          }).then(async r => safeJson((await r.json()).choices?.[0]?.message?.content || '{}', { formulas: [] }))
-            .catch(() => ({ formulas: [] }));
+          const GURL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${env.GEMINI_API_KEY}`;
+          const GH = { 'Content-Type': 'application/json' };
+
+          const geminiCall = (prompt, maxTokens) => fetch(GURL, {
+            method: 'POST', headers: GH,
+            body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { temperature: 0.1, maxOutputTokens: maxTokens } })
+          }).then(async r => { const d = await r.json(); return safeJson(d.candidates?.[0]?.content?.parts?.[0]?.text || '{}', {}); }).catch(() => ({}));
+
+          // Quick pre-check: skip formula extraction entirely if no formula-related keywords are present
+          const FORMULA_KEYWORDS = /\b(formula|equation|calculate|calculation|solve|solving|equals|p-hat|p hat|q-hat|q hat|x-bar|x bar|mu|sigma|confidence interval|standard error|margin of error|sample size|half life|half-life|clearance|bioavailability|henderson|hasselbalch|pH|pKa|integral|derivative|theorem|proof|matrix|vector|sum of|square root|percentage|ratio|proportion|statistic|variance|deviation|equation of|=\s*[a-zA-Z0-9]|\d\s*[+\-*/^]\s*\d)\b/i;
+          const hasFormulaIndicators = opts.formulas && FORMULA_KEYWORDS.test(text);
+
+          const nvidiaCall = () => {
+            if (!hasFormulaIndicators) return Promise.resolve({ formulas: [] });
+            return fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
+              method: 'POST',
+              headers: { 'Authorization': `Bearer ${env.NVIDIA_API_KEY}`, 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                model: 'meta/llama-3.3-70b-instruct',
+                messages: [{ role: 'system', content: FSYS }, { role: 'user', content: FUSER }],
+                temperature: 0.1, max_tokens: 4000, response_format: { type: 'json_object' }
+              })
+            }).then(async r => safeJson((await r.json()).choices?.[0]?.message?.content || '{}', { formulas: [] }))
+              .catch(() => ({ formulas: [] }));
+          };
 
           const [nFormulas, gTerms, gFormulas] = await Promise.all([
             nvidiaCall(),
             geminiCall(TPROMPT, 2048).then(r => ({ terms: r.terms || [], points: r.points || [] })),
-            useBoth ? geminiCall(FSYS + '\n\n' + FUSER, 4096).then(r => ({ formulas: r.formulas || [] })) : Promise.resolve({ formulas: [] })
+            (useBoth && hasFormulaIndicators) ? geminiCall(FSYS + '\n\n' + FUSER, 4096).then(r => ({ formulas: r.formulas || [] })) : Promise.resolve({ formulas: [] })
           ]);
 
           const normKey = f => f.formula.toLowerCase().replace(/[\s*()\[\]{}'"`\u00b1\u00b7\u00d7\u221a^_]/g, '').substring(0, 30);
@@ -177,7 +153,6 @@ TRANSCRIPT:\n"""\n${text.substring(0, 16000)}\n"""`;
             formulas: opts.formulas ? merged : [],
             terms:    opts.terms    ? (gTerms.terms  || []) : [],
             points:   opts.summary  ? (gTerms.points || []) : [],
-            translatedText: lang !== 'en' ? translatedText : null,
           }), { headers: { 'Content-Type': 'application/json; charset=utf-8' } });
         }
 
@@ -222,6 +197,9 @@ h1{font-size:28px;font-weight:700;color:var(--tx);letter-spacing:-.5px;margin-bo
 .sub{color:var(--td);font-size:13px;line-height:1.5;}
 .sec{background:var(--sf);border:1px solid var(--bd);border-radius:var(--r);padding:20px;margin-bottom:10px;box-shadow:0 1px 3px rgba(0,0,0,.04);}
 .sec-label{font-size:10px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:var(--mu);margin-bottom:14px;}
+.vlang-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+.vlang-card{display:flex;align-items:center;justify-content:center;gap:8px;padding:12px;background:var(--pn);border:1.5px solid var(--bd);border-radius:10px;cursor:pointer;transition:all .2s;user-select:none;font-size:13px;font-weight:500;color:var(--td);}
+.vlang-card.sel{border-color:var(--ac);background:var(--ac-bg);color:var(--ac);}
 .drop{border:1.5px dashed var(--bd2);border-radius:10px;padding:30px 20px;text-align:center;cursor:pointer;transition:all .2s;}
 .drop:hover,.drop.over{border-color:var(--ac);background:var(--ac-bg);}
 .drop-icon{width:52px;height:52px;background:var(--ac-bg);border:1px solid var(--ac-bd);border-radius:14px;display:flex;align-items:center;justify-content:center;margin:0 auto 14px;}
@@ -277,6 +255,7 @@ input[type="file"]{display:none;}
 .sbox::-webkit-scrollbar{width:4px;}
 .sbox::-webkit-scrollbar-thumb{background:var(--bd2);border-radius:4px;}
 .txten{font-size:13px;line-height:1.9;color:var(--tx);white-space:pre-wrap;word-break:break-word;}
+.txten.rtl{direction:rtl;text-align:right;unicode-bidi:plaintext;}
 .legend{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;}
 .li{font-size:10px;font-weight:600;padding:3px 9px;border-radius:100px;border:1px solid;}
 .lc,.tc{background:#eff6ff;color:#1d4ed8;border-color:#bfdbfe;}
@@ -317,7 +296,6 @@ body.dark .err{background:#3a1620;border-color:#5c2230;color:#fda4af;}
   <div class="topbar">
     <select class="lang-sel" id="langSel" onchange="setLang(this.value)">
       <option value="en">English</option>
-      <option value="fa">فارسی</option>
       <option value="ar">العربية</option>
       <option value="de">Deutsch</option>
       <option value="fr">Français</option>
@@ -396,7 +374,7 @@ body.dark .err{background:#3a1620;border-color:#5c2230;color:#fda4af;}
     </div>
   </div>
 
-  <button class="btn" id="go" disabled onclick="run()" data-key="analyze">Analyze lecture →</button>
+  <button class="btn" id="go" disabled onclick="run()">Analyze lecture →</button>
 
   <div class="loading" id="loading">
     <div class="loading-top"><div class="spin"></div><p id="ltxt">Processing...</p></div>
@@ -471,12 +449,13 @@ body.dark .err{background:#3a1620;border-color:#5c2230;color:#fda4af;}
 </div>
 
 <script>
-var selFile=null,rData={},curLang='en';
+var selFile=null,rData={},curLang='en',curVoiceLang='en';
 const TARGET_SR=8000,CHUNK_SECS=720;
 
 var T={
   en:{badge:'AI Lecture Assistant',sub:'Upload a recording — get transcript, formulas, terms & summary',
-    recLabel:'Recording',dropH:'Drop your audio file here',dropP:'or click to browse · mp3 · m4a · wav · ogg · webm',
+    voiceLangLabel:'Recording Language',recLabel:'Recording',
+    dropH:'Drop your audio file here',dropP:'or click to browse · mp3 · m4a · wav · ogg · webm',
     extLabel:'Extract',formulas:'Formulas',terms:'Terms',summary:'Summary',
     modeLabel:'Analysis mode',fastDesc:'Fast formula detection + Gemini summary',accDesc:'NVIDIA + Gemini — maximum coverage',fastBadge:'Default',accBadge:'+Gemini',
     analyze:'Analyze lecture →',copy:'📋 Copy text',dlTxt:'⬇ Download .txt',dlPdf:'📄 Download PDF',
@@ -485,18 +464,9 @@ var T={
     noFormulas:'No formulas detected',noTerms:'No terms detected',noSummary:'No summary available',
     dark:'Dark mode',light:'Light mode',large:'📦 Large file — will be split into chunks.',
     today:'Today',month:'Month',year:'Year'},
-  fa:{badge:'دستیار هوشمند درس',sub:'فایل صوتی آپلود کن — متن، فرمول، اصطلاح و خلاصه بگیر',
-    recLabel:'ضبط صدا',dropH:'فایل صوتی را اینجا رها کنید',dropP:'یا کلیک کنید · mp3 · m4a · wav · ogg · webm',
-    extLabel:'استخراج',formulas:'فرمول‌ها',terms:'اصطلاحات',summary:'خلاصه',
-    modeLabel:'حالت آنالیز',fastDesc:'تشخیص سریع فرمول + خلاصه Gemini',accDesc:'NVIDIA + Gemini — پوشش کامل',fastBadge:'پیش‌فرض',accBadge:'+Gemini',
-    analyze:'آنالیز درس ←',copy:'📋 کپی متن',dlTxt:'⬇ دانلود .txt',dlPdf:'📄 دانلود PDF',
-    tabTr:'متن',tabFo:'فرمول‌ها',tabTe:'اصطلاحات',tabSu:'خلاصه',
-    trTitle:'متن کامل',fTitle:'فرمول‌ها و معادلات',tTitle:'اصطلاحات فنی',sTitle:'نکات کلیدی',
-    noFormulas:'فرمولی یافت نشد',noTerms:'اصطلاحی یافت نشد',noSummary:'خلاصه‌ای در دسترس نیست',
-    dark:'حالت تاریک',light:'حالت روشن',large:'📦 فایل بزرگ — به بخش‌های کوچکتر تقسیم می‌شود.',
-    today:'امروز',month:'ماه',year:'سال'},
   ar:{badge:'مساعد المحاضرات',sub:'ارفع تسجيلاً — احصل على النص والمعادلات والمصطلحات والملخص',
-    recLabel:'التسجيل',dropH:'أسقط ملف الصوت هنا',dropP:'أو انقر للتصفح · mp3 · m4a · wav',
+    voiceLangLabel:'لغة التسجيل',recLabel:'التسجيل',
+    dropH:'أسقط ملف الصوت هنا',dropP:'أو انقر للتصفح · mp3 · m4a · wav',
     extLabel:'استخراج',formulas:'المعادلات',terms:'المصطلحات',summary:'الملخص',
     modeLabel:'وضع التحليل',fastDesc:'كشف سريع للمعادلات + ملخص Gemini',accDesc:'NVIDIA + Gemini — تغطية شاملة',fastBadge:'افتراضي',accBadge:'+Gemini',
     analyze:'تحليل المحاضرة ←',copy:'📋 نسخ النص',dlTxt:'⬇ تحميل .txt',dlPdf:'📄 تحميل PDF',
@@ -506,7 +476,8 @@ var T={
     dark:'الوضع المظلم',light:'الوضع الفاتح',large:'📦 ملف كبير — سيتم تقسيمه.',
     today:'اليوم',month:'الشهر',year:'السنة'},
   de:{badge:'KI Vorlesungsassistent',sub:'Lade eine Aufnahme hoch — erhalte Transkript, Formeln, Begriffe & Zusammenfassung',
-    recLabel:'Aufnahme',dropH:'Audiodatei hier ablegen',dropP:'oder klicken · mp3 · m4a · wav · ogg · webm',
+    voiceLangLabel:'Aufnahmesprache',recLabel:'Aufnahme',
+    dropH:'Audiodatei hier ablegen',dropP:'oder klicken · mp3 · m4a · wav · ogg · webm',
     extLabel:'Extrahieren',formulas:'Formeln',terms:'Begriffe',summary:'Zusammenfassung',
     modeLabel:'Analysemodus',fastDesc:'Schnelle Formelerkennung + Gemini Zusammenfassung',accDesc:'NVIDIA + Gemini — maximale Abdeckung',fastBadge:'Standard',accBadge:'+Gemini',
     analyze:'Vorlesung analysieren →',copy:'📋 Text kopieren',dlTxt:'⬇ .txt herunterladen',dlPdf:'📄 PDF herunterladen',
@@ -516,7 +487,8 @@ var T={
     dark:'Dunkelmodus',light:'Hellmodus',large:'📦 Große Datei — wird aufgeteilt.',
     today:'Heute',month:'Monat',year:'Jahr'},
   fr:{badge:'Assistant IA de cours',sub:'Téléchargez un enregistrement — obtenez transcription, formules, termes & résumé',
-    recLabel:'Enregistrement',dropH:'Déposez votre fichier audio ici',dropP:'ou cliquez pour parcourir · mp3 · m4a · wav',
+    voiceLangLabel:"Langue de l'enregistrement",recLabel:'Enregistrement',
+    dropH:'Déposez votre fichier audio ici',dropP:'ou cliquez pour parcourir · mp3 · m4a · wav',
     extLabel:'Extraire',formulas:'Formules',terms:'Termes',summary:'Résumé',
     modeLabel:"Mode d'analyse",fastDesc:'Détection rapide + résumé Gemini',accDesc:'NVIDIA + Gemini — couverture maximale',fastBadge:'Défaut',accBadge:'+Gemini',
     analyze:'Analyser le cours →',copy:'📋 Copier le texte',dlTxt:'⬇ Télécharger .txt',dlPdf:'📄 Télécharger PDF',
@@ -526,7 +498,8 @@ var T={
     dark:'Mode sombre',light:'Mode clair',large:'📦 Fichier volumineux — sera divisé.',
     today:"Aujourd'hui",month:'Mois',year:'Année'},
   es:{badge:'Asistente IA de clases',sub:'Sube una grabación — obtén transcripción, fórmulas, términos y resumen',
-    recLabel:'Grabación',dropH:'Suelta tu archivo de audio aquí',dropP:'o haz clic para buscar · mp3 · m4a · wav',
+    voiceLangLabel:'Idioma de grabación',recLabel:'Grabación',
+    dropH:'Suelta tu archivo de audio aquí',dropP:'o haz clic para buscar · mp3 · m4a · wav',
     extLabel:'Extraer',formulas:'Fórmulas',terms:'Términos',summary:'Resumen',
     modeLabel:'Modo de análisis',fastDesc:'Detección rápida + resumen Gemini',accDesc:'NVIDIA + Gemini — cobertura máxima',fastBadge:'Por defecto',accBadge:'+Gemini',
     analyze:'Analizar clase →',copy:'📋 Copiar texto',dlTxt:'⬇ Descargar .txt',dlPdf:'📄 Descargar PDF',
@@ -536,7 +509,8 @@ var T={
     dark:'Modo oscuro',light:'Modo claro',large:'📦 Archivo grande — se dividirá.',
     today:'Hoy',month:'Mes',year:'Año'},
   ru:{badge:'ИИ-ассистент лекций',sub:'Загрузите запись — получите транскрипт, формулы, термины и резюме',
-    recLabel:'Запись',dropH:'Перетащите аудиофайл сюда',dropP:'или нажмите для выбора · mp3 · m4a · wav',
+    voiceLangLabel:'Язык записи',recLabel:'Запись',
+    dropH:'Перетащите аудиофайл сюда',dropP:'или нажмите для выбора · mp3 · m4a · wav',
     extLabel:'Извлечь',formulas:'Формулы',terms:'Термины',summary:'Резюме',
     modeLabel:'Режим анализа',fastDesc:'Быстрое обнаружение формул + резюме Gemini',accDesc:'NVIDIA + Gemini — максимальное покрытие',fastBadge:'По умолчанию',accBadge:'+Gemini',
     analyze:'Анализировать лекцию →',copy:'📋 Копировать текст',dlTxt:'⬇ Скачать .txt',dlPdf:'📄 Скачать PDF',
@@ -546,7 +520,8 @@ var T={
     dark:'Тёмный режим',light:'Светлый режим',large:'📦 Большой файл — будет разделён.',
     today:'Сегодня',month:'Месяц',year:'Год'},
   zh:{badge:'AI课堂助手',sub:'上传录音 — 获取文字稿、公式、术语和摘要',
-    recLabel:'录音',dropH:'将音频文件拖放至此',dropP:'或点击浏览 · mp3 · m4a · wav',
+    voiceLangLabel:'录音语言',recLabel:'录音',
+    dropH:'将音频文件拖放至此',dropP:'或点击浏览 · mp3 · m4a · wav',
     extLabel:'提取',formulas:'公式',terms:'术语',summary:'摘要',
     modeLabel:'分析模式',fastDesc:'快速公式检测 + Gemini摘要',accDesc:'NVIDIA + Gemini — 最大覆盖',fastBadge:'默认',accBadge:'+Gemini',
     analyze:'分析课程 →',copy:'📋 复制文本',dlTxt:'⬇ 下载 .txt',dlPdf:'📄 下载 PDF',
@@ -556,7 +531,8 @@ var T={
     dark:'深色模式',light:'浅色模式',large:'📦 大文件 — 将被分割处理。',
     today:'今天',month:'本月',year:'本年'},
   ja:{badge:'AI講義アシスタント',sub:'録音をアップロード — 文字起こし、数式、用語、要約を取得',
-    recLabel:'録音',dropH:'音声ファイルをここにドロップ',dropP:'またはクリックして選択 · mp3 · m4a · wav',
+    voiceLangLabel:'録音言語',recLabel:'録音',
+    dropH:'音声ファイルをここにドロップ',dropP:'またはクリックして選択 · mp3 · m4a · wav',
     extLabel:'抽出',formulas:'数式',terms:'用語',summary:'要約',
     modeLabel:'分析モード',fastDesc:'高速数式検出 + Gemini要約',accDesc:'NVIDIA + Gemini — 最大カバレッジ',fastBadge:'デフォルト',accBadge:'+Gemini',
     analyze:'講義を分析 →',copy:'📋 テキストをコピー',dlTxt:'⬇ .txtをダウンロード',dlPdf:'📄 PDFをダウンロード',
@@ -566,7 +542,8 @@ var T={
     dark:'ダークモード',light:'ライトモード',large:'📦 大きなファイル — 分割して処理します。',
     today:'今日',month:'今月',year:'今年'},
   tr:{badge:'Yapay Zeka Ders Asistanı',sub:'Kayıt yükle — transkript, formüller, terimler ve özet al',
-    recLabel:'Kayıt',dropH:'Ses dosyanızı buraya bırakın',dropP:'veya tıklayın · mp3 · m4a · wav',
+    voiceLangLabel:'Kayıt Dili',recLabel:'Kayıt',
+    dropH:'Ses dosyanızı buraya bırakın',dropP:'veya tıklayın · mp3 · m4a · wav',
     extLabel:'Çıkar',formulas:'Formüller',terms:'Terimler',summary:'Özet',
     modeLabel:'Analiz modu',fastDesc:'Hızlı formül tespiti + Gemini özet',accDesc:'NVIDIA + Gemini — maksimum kapsam',fastBadge:'Varsayılan',accBadge:'+Gemini',
     analyze:'Dersi analiz et →',copy:'📋 Metni kopyala',dlTxt:'⬇ .txt indir',dlPdf:'📄 PDF indir',
@@ -576,7 +553,8 @@ var T={
     dark:'Karanlık mod',light:'Aydınlık mod',large:'📦 Büyük dosya — parçalara bölünecek.',
     today:'Bugün',month:'Ay',year:'Yıl'},
   hi:{badge:'AI लेक्चर असिस्टेंट',sub:'रिकॉर्डिंग अपलोड करें — ट्रांसक्रिप्ट, फॉर्मूले, शब्द और सारांश पाएं',
-    recLabel:'रिकॉर्डिंग',dropH:'अपनी ऑडियो फ़ाइल यहाँ छोड़ें',dropP:'या क्लिक करें · mp3 · m4a · wav',
+    voiceLangLabel:'रिकॉर्डिंग भाषा',recLabel:'रिकॉर्डिंग',
+    dropH:'अपनी ऑडियो फ़ाइल यहाँ छोड़ें',dropP:'या क्लिक करें · mp3 · m4a · wav',
     extLabel:'निकालें',formulas:'फॉर्मूले',terms:'शब्द',summary:'सारांश',
     modeLabel:'विश्लेषण मोड',fastDesc:'तेज़ फॉर्मूला पहचान + Gemini सारांश',accDesc:'NVIDIA + Gemini — पूर्ण कवरेज',fastBadge:'डिफ़ॉल्ट',accBadge:'+Gemini',
     analyze:'लेक्चर विश्लेषण →',copy:'📋 टेक्स्ट कॉपी करें',dlTxt:'⬇ .txt डाउनलोड',dlPdf:'📄 PDF डाउनलोड',
@@ -586,7 +564,8 @@ var T={
     dark:'डार्क मोड',light:'लाइट मोड',large:'📦 बड़ी फ़ाइल — टुकड़ों में विभाजित होगी।',
     today:'आज',month:'महीना',year:'साल'},
   pt:{badge:'Assistente de Aulas com IA',sub:'Envie uma gravação — obtenha transcrição, fórmulas, termos e resumo',
-    recLabel:'Gravação',dropH:'Solte seu arquivo de áudio aqui',dropP:'ou clique para procurar · mp3 · m4a · wav',
+    voiceLangLabel:'Idioma da gravação',recLabel:'Gravação',
+    dropH:'Solte seu arquivo de áudio aqui',dropP:'ou clique para procurar · mp3 · m4a · wav',
     extLabel:'Extrair',formulas:'Fórmulas',terms:'Termos',summary:'Resumo',
     modeLabel:'Modo de análise',fastDesc:'Detecção rápida + resumo Gemini',accDesc:'NVIDIA + Gemini — cobertura máxima',fastBadge:'Padrão',accBadge:'+Gemini',
     analyze:'Analisar aula →',copy:'📋 Copiar texto',dlTxt:'⬇ Baixar .txt',dlPdf:'📄 Baixar PDF',
@@ -597,10 +576,12 @@ var T={
     today:'Hoje',month:'Mês',year:'Ano'}
 };
 
+function selVoiceLang(l){ curVoiceLang=l; }
+
 function setLang(l){
   curLang=l;
   var t=T[l]||T.en;
-  var rtl=l==='fa'||l==='ar';
+  var rtl=l==='ar';
   document.documentElement.setAttribute('dir',rtl?'rtl':'ltr');
   localStorage.setItem('lang',l);
   var s=function(id,v){var e=document.getElementById(id);if(e)e.textContent=v;};
@@ -610,8 +591,7 @@ function setLang(l){
   s('uModeLabel',t.modeLabel);
   s('uFastDesc',t.fastDesc); s('uAccDesc',t.accDesc);
   s('uFastBadge',t.fastBadge); s('uAccBadge',t.accBadge);
-  s('uDlTxt',t.dlTxt);
-  s('pdfBtn',t.dlPdf);
+  s('uDlTxt',t.dlTxt); s('pdfBtn',t.dlPdf);
   s('uTabTr',t.tabTr); s('uTabFo',t.tabFo); s('uTabTe',t.tabTe); s('uTabSu',t.tabSu);
   s('uTrTitle',t.trTitle); s('uFTitle',t.fTitle); s('uTTitle',t.tTitle); s('uSTitle',t.sTitle);
   s('uNoFormulas',t.noFormulas);
@@ -700,7 +680,17 @@ function resample(input,inRate,outRate){
   return out;
 }
 
-function buildWav(pcm,sr){
+function buildWav(pcm,sr,is16){
+  if(is16){
+    var n=pcm.length,buf=new ArrayBuffer(44+n*2),v=new DataView(buf);
+    var ws=function(o,s){for(var i=0;i<s.length;i++)v.setUint8(o+i,s.charCodeAt(i));};
+    ws(0,'RIFF');v.setUint32(4,36+n*2,true);ws(8,'WAVE');
+    ws(12,'fmt ');v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,1,true);
+    v.setUint32(24,sr,true);v.setUint32(28,sr*2,true);v.setUint16(32,2,true);v.setUint16(34,16,true);
+    ws(36,'data');v.setUint32(40,n*2,true);
+    for(var i=0;i<n;i++){var s=Math.max(-1,Math.min(1,pcm[i]));var val=s<0?s*32768:s*32767;v.setInt16(44+i*2,Math.round(val),true);}
+    return new Blob([buf],{type:'audio/wav'});
+  }
   var n=pcm.length,buf=new ArrayBuffer(44+n),v=new DataView(buf);
   var ws=function(o,s){for(var i=0;i<s.length;i++)v.setUint8(o+i,s.charCodeAt(i));};
   ws(0,'RIFF');v.setUint32(4,36+n,true);ws(8,'WAVE');
@@ -720,9 +710,11 @@ async function toWavChunks(file){
   var nCh=decoded.numberOfChannels,n=decoded.length,mono=new Float32Array(n);
   for(var ch=0;ch<nCh;ch++){var src=decoded.getChannelData(ch);for(var i=0;i<n;i++)mono[i]+=src[i];}
   if(nCh>1)for(var i=0;i<n;i++)mono[i]/=nCh;
-  var rs=resample(mono,decoded.sampleRate,TARGET_SR);
-  var cs=TARGET_SR*CHUNK_SECS,chunks=[];
-  for(var s=0;s<rs.length;s+=cs)chunks.push(buildWav(rs.subarray(s,Math.min(s+cs,rs.length)),TARGET_SR));
+  var isFa=curVoiceLang==='fa';
+  var sr=isFa?16000:TARGET_SR;
+  var rs=resample(mono,decoded.sampleRate,sr);
+  var cs=sr*CHUNK_SECS,chunks=[];
+  for(var s=0;s<rs.length;s+=cs)chunks.push(buildWav(rs.subarray(s,Math.min(s+cs,rs.length)),sr,isFa));
   prog(22,'\u2705 '+chunks.length+' chunk'+(chunks.length>1?'s':'')+' ready');
   return chunks;
 }
@@ -732,6 +724,7 @@ function upload(blob,idx,total){
     var fd=new FormData();
     fd.append('file',blob,'chunk_'+idx+'.wav');
     fd.append('action','transcribe');
+    fd.append('voiceLang',curVoiceLang);
     var xhr=new XMLHttpRequest();
     xhr.open('POST','/process');
     xhr.upload.addEventListener('progress',function(e){
@@ -749,8 +742,6 @@ function upload(blob,idx,total){
 async function run(){
   if(!selFile)return;
   var useBoth=document.getElementById('ma').classList.contains('sel');
-  var langEl=document.getElementById('langSel');
-  var lang=langEl?langEl.value:'en';
   document.getElementById('go').disabled=true;
   document.getElementById('loading').style.display='block';
   document.getElementById('result').style.display='none';
@@ -770,13 +761,11 @@ async function run(){
     var fd=new FormData();
     fd.append('action','analyze');fd.append('text',tx);
     fd.append('opts',JSON.stringify(opts));fd.append('useBoth',useBoth?'true':'false');
-    fd.append('lang',lang);
     var r=await fetch('/process',{method:'POST',body:fd});
     var j=await r.text();
     if(!r.ok)throw new Error(j);
     prog(100,'\u2705 Done!');
-    rData=JSON.parse(j);
-    rData.transcript=rData.translatedText||tx;
+    rData=JSON.parse(j);rData.transcript=tx;
     render(opts,useBoth);
   }catch(e){
     document.getElementById('err').textContent='Error: '+e.message;
@@ -792,6 +781,7 @@ var TM={chemical:{c:'tc',l:'Chemical'},statistical:{c:'ts',l:'Statistical'},math
 function render(opts,useBoth){
   var t=T[curLang]||T.en;
   document.getElementById('trTxt').textContent=rData.transcript||'';
+  document.getElementById('trTxt').classList.toggle('rtl',curVoiceLang==='fa');
   document.getElementById('fleg').innerHTML=
     '<span class="li lc">Chemical</span><span class="li ls">Statistical</span><span class="li lm">Mathematical</span><span class="li lp">Pharmacological</span>'+
     (useBoth?'<span class="li lb" style="margin-left:auto">Both</span><span class="li lg">Gemini</span><span class="li ln">NVIDIA</span>':'');
