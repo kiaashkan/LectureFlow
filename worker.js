@@ -49,12 +49,17 @@ export default {
         if (action === 'transcribe') {
           const file = fd.get('file');
           if (!file) return new Response('No file', { status: 400 });
+          const voiceLang = fd.get('voiceLang') || 'en';
           const gf = new FormData();
           gf.append('file', file, file.name || 'audio.wav');
-          gf.append('model', 'whisper-large-v3-turbo');
+          gf.append('model', voiceLang === 'fa' ? 'whisper-large-v3' : 'whisper-large-v3-turbo');
           gf.append('response_format', 'text');
-          gf.append('language', 'en');
-          gf.append('prompt', 'English university lecture: statistics, pharmacology, chemistry, biochemistry. Formulas: p-hat=p\u0302, q-hat=q\u0302, x-bar=x\u0305, mu=\u03bc, sigma=\u03c3, z-star=z*, CI=p\u0302\u00b1z*\u221a(p\u0302q\u0302/n), E=z*\u221a(p\u0302q\u0302/n), SE=\u221a(p\u0302q\u0302/n), n=p\u0302q\u0302(z*/E)\u00b2, H\u2080, H\u2081, t\u00bd=0.693/ke, CL=Dose/AUC, F=(AUCoral/AUCiv)\u00d7100%, pH=pKa+log([A\u207b]/[HA]). Write numbers as digits.');
+          gf.append('language', voiceLang);
+          if (voiceLang === 'en') {
+            gf.append('prompt', 'English university lecture: statistics, pharmacology, chemistry, biochemistry. Formulas: p-hat=p\u0302, q-hat=q\u0302, x-bar=x\u0305, mu=\u03bc, sigma=\u03c3, z-star=z*, CI=p\u0302\u00b1z*\u221a(p\u0302q\u0302/n), E=z*\u221a(p\u0302q\u0302/n), SE=\u221a(p\u0302q\u0302/n), n=p\u0302q\u0302(z*/E)\u00b2, H\u2080, H\u2081, t\u00bd=0.693/ke, CL=Dose/AUC, F=(AUCoral/AUCiv)\u00d7100%, pH=pKa+log([A\u207b]/[HA]). Write numbers as digits.');
+          } else if (voiceLang === 'fa') {
+            gf.append('prompt', '\u0645\u062a\u0646 \u0641\u0627\u0631\u0633\u06cc \u0631\u0633\u0645\u06cc \u0648 \u0639\u0644\u0645\u06cc: \u0630\u062e\u0627\u06cc\u0631\u060c \u0639\u0646\u0627\u0635\u0631\u060c \u0633\u0648\u0626\u062f\u060c \u0641\u0644\u0632\u0627\u062a \u06a9\u0645\u06cc\u0627\u0628\u060c \u0627\u0633\u062a\u062e\u0631\u0627\u062c\u060c \u062a\u06a9\u0646\u0648\u0644\u0648\u0698\u06cc\u060c \u0635\u0646\u0639\u062a\u060c \u0627\u0642\u062a\u0635\u0627\u062f\u060c \u0622\u0644\u0645\u0627\u0646\u060c \u0622\u0645\u0631\u06cc\u06a9\u0627\u060c \u0686\u06cc\u0646\u060c \u0627\u0631\u0648\u067e\u0627. \u0627\u0639\u062f\u0627\u062f \u0631\u0627 \u0628\u0647 \u0635\u0648\u0631\u062a \u0631\u0642\u0645 \u0628\u0646\u0648\u06cc\u0633\u06cc\u062f.');
+          }
           const gr = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
             method: 'POST', headers: { 'Authorization': `Bearer ${env.GROQ_API_KEY}` }, body: gf
           });
@@ -296,6 +301,7 @@ body.dark .err{background:#3a1620;border-color:#5c2230;color:#fda4af;}
   <div class="topbar">
     <select class="lang-sel" id="langSel" onchange="setLang(this.value)">
       <option value="en">English</option>
+      <option value="fa">فارسی</option>
       <option value="ar">العربية</option>
       <option value="de">Deutsch</option>
       <option value="fr">Français</option>
@@ -325,6 +331,18 @@ body.dark .err{background:#3a1620;border-color:#5c2230;color:#fda4af;}
     <div class="badge" id="uBadge">AI Lecture Assistant</div>
     <h1 id="uH1">LectureFlow</h1>
     <p class="sub" id="uSub">Upload a recording — get transcript, formulas, terms & summary</p>
+  </div>
+
+  <div class="sec">
+    <div class="sec-label" id="uVoiceLangLabel">Recording Language</div>
+    <div class="vlang-grid">
+      <div class="vlang-card sel" id="vlEn" onclick="selVoiceLang('en')">
+        English
+      </div>
+      <div class="vlang-card" id="vlFa" onclick="selVoiceLang('fa')">
+        فارسی
+      </div>
+    </div>
   </div>
 
   <div class="sec">
@@ -464,6 +482,17 @@ var T={
     noFormulas:'No formulas detected',noTerms:'No terms detected',noSummary:'No summary available',
     dark:'Dark mode',light:'Light mode',large:'📦 Large file — will be split into chunks.',
     today:'Today',month:'Month',year:'Year'},
+  fa:{badge:'دستیار هوشمند درس',sub:'فایل صوتی آپلود کن — متن، فرمول، اصطلاح و خلاصه بگیر',
+    voiceLangLabel:'زبان ضبط',recLabel:'ضبط صدا',
+    dropH:'فایل صوتی را اینجا رها کنید',dropP:'یا کلیک کنید · mp3 · m4a · wav · ogg · webm',
+    extLabel:'استخراج',formulas:'فرمول‌ها',terms:'اصطلاحات',summary:'خلاصه',
+    modeLabel:'حالت آنالیز',fastDesc:'تشخیص سریع فرمول + خلاصه Gemini',accDesc:'NVIDIA + Gemini — پوشش کامل',fastBadge:'پیش‌فرض',accBadge:'+Gemini',
+    analyze:'آنالیز درس ←',copy:'📋 کپی متن',dlTxt:'⬇ دانلود .txt',dlPdf:'📄 دانلود PDF',
+    tabTr:'متن',tabFo:'فرمول‌ها',tabTe:'اصطلاحات',tabSu:'خلاصه',
+    trTitle:'متن کامل',fTitle:'فرمول‌ها و معادلات',tTitle:'اصطلاحات فنی',sTitle:'نکات کلیدی',
+    noFormulas:'فرمولی یافت نشد',noTerms:'اصطلاحی یافت نشد',noSummary:'خلاصه‌ای در دسترس نیست',
+    dark:'حالت تاریک',light:'حالت روشن',large:'📦 فایل بزرگ — به بخش‌های کوچکتر تقسیم می‌شود.',
+    today:'امروز',month:'ماه',year:'سال'},
   ar:{badge:'مساعد المحاضرات',sub:'ارفع تسجيلاً — احصل على النص والمعادلات والمصطلحات والملخص',
     voiceLangLabel:'لغة التسجيل',recLabel:'التسجيل',
     dropH:'أسقط ملف الصوت هنا',dropP:'أو انقر للتصفح · mp3 · m4a · wav',
@@ -576,16 +605,21 @@ var T={
     today:'Hoje',month:'Mês',year:'Ano'}
 };
 
-function selVoiceLang(l){ curVoiceLang=l; }
+function selVoiceLang(l){
+  curVoiceLang=l;
+  document.getElementById('vlEn').classList.toggle('sel',l==='en');
+  document.getElementById('vlFa').classList.toggle('sel',l==='fa');
+}
 
 function setLang(l){
   curLang=l;
   var t=T[l]||T.en;
-  var rtl=l==='ar';
+  var rtl=l==='fa'||l==='ar';
   document.documentElement.setAttribute('dir',rtl?'rtl':'ltr');
   localStorage.setItem('lang',l);
   var s=function(id,v){var e=document.getElementById(id);if(e)e.textContent=v;};
   s('uBadge',t.badge); s('uSub',t.sub);
+  s('uVoiceLangLabel',t.voiceLangLabel);
   s('uRecLabel',t.recLabel); s('uDropH',t.dropH); s('uDropP',t.dropP);
   s('uExtLabel',t.extLabel); s('uFormulas',t.formulas); s('uTerms',t.terms); s('uSummary',t.summary);
   s('uModeLabel',t.modeLabel);
