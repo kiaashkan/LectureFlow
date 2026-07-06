@@ -20,6 +20,7 @@ export default {
         const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
         const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
         const yearStart  = new Date(now.getFullYear(), 0, 1).toISOString();
+        const allStart = new Date(2020, 0, 1).toISOString();
         const query = async (since) => {
           const r = await fetch(
             `https://api.cloudflare.com/client/v4/accounts/${accountId}/analytics_engine/sql`,
@@ -30,12 +31,12 @@ export default {
           try { const d = JSON.parse(txt); if (!r.ok) return { count: 0 }; return { count: Number(d.data?.[0]?.c || 0) }; }
           catch(e) { return { count: 0 }; }
         };
-        const [today, month, year] = await Promise.all([query(todayStart), query(monthStart), query(yearStart)]);
-        return new Response(JSON.stringify({ today: today.count, month: month.count, year: year.count }), {
+        const [today, month, year, all] = await Promise.all([query(todayStart), query(monthStart), query(yearStart), query(allStart)]);
+        return new Response(JSON.stringify({ today: today.count, month: month.count, year: year.count, all: all.count }), {
           headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
         });
       } catch (e) {
-        return new Response(JSON.stringify({ today: 0, month: 0, year: 0 }), { headers: { 'Content-Type': 'application/json' } });
+        return new Response(JSON.stringify({ today: 0, month: 0, year: 0, all: 0 }), { headers: { 'Content-Type': 'application/json' } });
       }
     }
 
@@ -49,17 +50,12 @@ export default {
         if (action === 'transcribe') {
           const file = fd.get('file');
           if (!file) return new Response('No file', { status: 400 });
-          const voiceLang = fd.get('voiceLang') || 'en';
           const gf = new FormData();
           gf.append('file', file, file.name || 'audio.wav');
-          gf.append('model', voiceLang === 'fa' ? 'whisper-large-v3' : 'whisper-large-v3-turbo');
+          gf.append('model', 'whisper-large-v3');
           gf.append('response_format', 'text');
-          gf.append('language', voiceLang);
-          if (voiceLang === 'en') {
-            gf.append('prompt', 'English university lecture: statistics, pharmacology, chemistry, biochemistry. Formulas: p-hat=p\u0302, q-hat=q\u0302, x-bar=x\u0305, mu=\u03bc, sigma=\u03c3, z-star=z*, CI=p\u0302\u00b1z*\u221a(p\u0302q\u0302/n), E=z*\u221a(p\u0302q\u0302/n), SE=\u221a(p\u0302q\u0302/n), n=p\u0302q\u0302(z*/E)\u00b2, H\u2080, H\u2081, t\u00bd=0.693/ke, CL=Dose/AUC, F=(AUCoral/AUCiv)\u00d7100%, pH=pKa+log([A\u207b]/[HA]). Write numbers as digits.');
-          } else if (voiceLang === 'fa') {
-            gf.append('prompt', '\u0645\u062a\u0646 \u0641\u0627\u0631\u0633\u06cc \u0631\u0633\u0645\u06cc \u0648 \u0639\u0644\u0645\u06cc: \u0630\u062e\u0627\u06cc\u0631\u060c \u0639\u0646\u0627\u0635\u0631\u060c \u0633\u0648\u0626\u062f\u060c \u0641\u0644\u0632\u0627\u062a \u06a9\u0645\u06cc\u0627\u0628\u060c \u0627\u0633\u062a\u062e\u0631\u0627\u062c\u060c \u062a\u06a9\u0646\u0648\u0644\u0648\u0698\u06cc\u060c \u0635\u0646\u0639\u062a\u060c \u0627\u0642\u062a\u0635\u0627\u062f\u060c \u0622\u0644\u0645\u0627\u0646\u060c \u0622\u0645\u0631\u06cc\u06a9\u0627\u060c \u0686\u06cc\u0646\u060c \u0627\u0631\u0648\u067e\u0627. \u0627\u0639\u062f\u0627\u062f \u0631\u0627 \u0628\u0647 \u0635\u0648\u0631\u062a \u0631\u0642\u0645 \u0628\u0646\u0648\u06cc\u0633\u06cc\u062f.');
-          }
+          gf.append('language', 'en');
+          gf.append('prompt', 'English university lecture: statistics, pharmacology, chemistry, biochemistry. Formulas: p-hat=p\u0302, q-hat=q\u0302, x-bar=x\u0305, mu=\u03bc, sigma=\u03c3, z-star=z*, CI=p\u0302\u00b1z*\u221a(p\u0302q\u0302/n), E=z*\u221a(p\u0302q\u0302/n), SE=\u221a(p\u0302q\u0302/n), n=p\u0302q\u0302(z*/E)\u00b2, H\u2080, H\u2081, t\u00bd=0.693/ke, CL=Dose/AUC, F=(AUCoral/AUCiv)\u00d7100%, pH=pKa+log([A\u207b]/[HA]). Write numbers as digits.');
           const gr = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
             method: 'POST', headers: { 'Authorization': `Bearer ${env.GROQ_API_KEY}` }, body: gf
           });
@@ -202,9 +198,6 @@ h1{font-size:28px;font-weight:700;color:var(--tx);letter-spacing:-.5px;margin-bo
 .sub{color:var(--td);font-size:13px;line-height:1.5;}
 .sec{background:var(--sf);border:1px solid var(--bd);border-radius:var(--r);padding:20px;margin-bottom:10px;box-shadow:0 1px 3px rgba(0,0,0,.04);}
 .sec-label{font-size:10px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:var(--mu);margin-bottom:14px;}
-.vlang-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
-.vlang-card{display:flex;align-items:center;justify-content:center;gap:8px;padding:12px;background:var(--pn);border:1.5px solid var(--bd);border-radius:10px;cursor:pointer;transition:all .2s;user-select:none;font-size:13px;font-weight:500;color:var(--td);}
-.vlang-card.sel{border-color:var(--ac);background:var(--ac-bg);color:var(--ac);}
 .drop{border:1.5px dashed var(--bd2);border-radius:10px;padding:30px 20px;text-align:center;cursor:pointer;transition:all .2s;}
 .drop:hover,.drop.over{border-color:var(--ac);background:var(--ac-bg);}
 .drop-icon{width:52px;height:52px;background:var(--ac-bg);border:1px solid var(--ac-bd);border-radius:14px;display:flex;align-items:center;justify-content:center;margin:0 auto 14px;}
@@ -260,7 +253,6 @@ input[type="file"]{display:none;}
 .sbox::-webkit-scrollbar{width:4px;}
 .sbox::-webkit-scrollbar-thumb{background:var(--bd2);border-radius:4px;}
 .txten{font-size:13px;line-height:1.9;color:var(--tx);white-space:pre-wrap;word-break:break-word;}
-.txten.rtl{direction:rtl;text-align:right;unicode-bidi:plaintext;}
 .legend{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;}
 .li{font-size:10px;font-weight:600;padding:3px 9px;border-radius:100px;border:1px solid;}
 .lc,.tc{background:#eff6ff;color:#1d4ed8;border-color:#bfdbfe;}
@@ -301,7 +293,6 @@ body.dark .err{background:#3a1620;border-color:#5c2230;color:#fda4af;}
   <div class="topbar">
     <select class="lang-sel" id="langSel" onchange="setLang(this.value)">
       <option value="en">English</option>
-      <option value="fa">فارسی</option>
       <option value="ar">العربية</option>
       <option value="de">Deutsch</option>
       <option value="fr">Français</option>
@@ -331,18 +322,6 @@ body.dark .err{background:#3a1620;border-color:#5c2230;color:#fda4af;}
     <div class="badge" id="uBadge">AI Lecture Assistant</div>
     <h1 id="uH1">LectureFlow</h1>
     <p class="sub" id="uSub">Upload a recording — get transcript, formulas, terms & summary</p>
-  </div>
-
-  <div class="sec">
-    <div class="sec-label" id="uVoiceLangLabel">Recording Language</div>
-    <div class="vlang-grid">
-      <div class="vlang-card sel" id="vlEn" onclick="selVoiceLang('en')">
-        English
-      </div>
-      <div class="vlang-card" id="vlFa" onclick="selVoiceLang('fa')">
-        فارسی
-      </div>
-    </div>
   </div>
 
   <div class="sec">
@@ -447,32 +426,30 @@ body.dark .err{background:#3a1620;border-color:#5c2230;color:#fda4af;}
         <a href="https://github.com/kiaashkan/LectureFlow-app" target="_blank" title="Download Android App" style="display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border:1px solid var(--bd);border-radius:8px;text-decoration:none;color:var(--td);background:var(--sf);">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 16l-5-5 1.41-1.41L11 13.17V4h2v9.17l2.59-2.58L17 11l-5 5zm-7 2h14v2H5v-2z"/></svg>
         </a>
-        <a href="https://t.me/kiaashkan" target="_blank" title="@kiaashkan on Telegram" style="display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border:1px solid var(--bd);border-radius:8px;text-decoration:none;color:var(--td);background:var(--sf);">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm4.64 6.8l-1.68 7.92c-.12.56-.48.7-.96.44l-2.64-1.96-1.28 1.24c-.14.14-.26.26-.54.26l.2-2.72 4.96-4.48c.22-.2-.04-.3-.34-.1L7.66 14.4 5.08 13.6c-.54-.18-.56-.54.12-.8l9.16-3.52c.46-.16.86.1.72.72z"/></svg>
-        </a>
         <a href="https://github.com/kiaashkan" target="_blank" title="kiaashkan on GitHub" style="display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border:1px solid var(--bd);border-radius:8px;text-decoration:none;color:var(--td);background:var(--sf);">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.865 8.166 6.839 9.489.5.092.682-.217.682-.482 0-.237-.008-.866-.013-1.7-2.782.604-3.369-1.34-3.369-1.34-.454-1.156-1.11-1.464-1.11-1.464-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.087 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.578 9.578 0 0112 6.836c.85.004 1.705.115 2.504.337 1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.202 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.579.688.481C19.138 20.163 22 16.418 22 12c0-5.523-4.477-10-10-10z"/></svg>
         </a>
       </div>
     </div>
     <div style="margin-top:10px;font-size:11px;color:var(--mu);">
-      Made by <span style="font-weight:600;color:var(--td);">Kia Ashkan</span> with the help of Claude
+      Made by <span style="font-weight:600;color:var(--td);">KiA Ashkan</span> with the help of Claude
     </div>
     <div style="margin-top:10px;display:flex;gap:16px;font-size:11px;color:var(--mu);flex-wrap:wrap;">
       <span><span id="uToday">Today</span>: <strong id="statToday" style="color:var(--td)">—</strong></span>
       <span><span id="uMonth">Month</span>: <strong id="statMonth" style="color:var(--td)">—</strong></span>
       <span><span id="uYear">Year</span>: <strong id="statYear" style="color:var(--td)">—</strong></span>
+      <span><span id="uAll">Total</span>: <strong id="statAll" style="color:var(--td)">—</strong></span>
     </div>
   </div>
 </div>
 
 <script>
-var selFile=null,rData={},curLang='en',curVoiceLang='en';
+var selFile=null,rData={},curLang='en';
 const TARGET_SR=8000,CHUNK_SECS=720;
 
 var T={
   en:{badge:'AI Lecture Assistant',sub:'Upload a recording — get transcript, formulas, terms & summary',
-    voiceLangLabel:'Recording Language',recLabel:'Recording',
+    recLabel:'Recording',
     dropH:'Drop your audio file here',dropP:'or click to browse · mp3 · m4a · wav · ogg · webm',
     extLabel:'Extract',formulas:'Formulas',terms:'Terms',summary:'Summary',
     modeLabel:'Analysis mode',fastDesc:'Fast formula detection + Gemini summary',accDesc:'NVIDIA + Gemini — maximum coverage',fastBadge:'Default',accBadge:'+Gemini',
@@ -481,20 +458,9 @@ var T={
     trTitle:'Full Transcript',fTitle:'Formulas & Equations',tTitle:'Technical Terms',sTitle:'Key Points',
     noFormulas:'No formulas detected',noTerms:'No terms detected',noSummary:'No summary available',
     dark:'Dark mode',light:'Light mode',large:'📦 Large file — will be split into chunks.',
-    today:'Today',month:'Month',year:'Year'},
-  fa:{badge:'دستیار هوشمند درس',sub:'فایل صوتی آپلود کن — متن، فرمول، اصطلاح و خلاصه بگیر',
-    voiceLangLabel:'زبان ضبط',recLabel:'ضبط صدا',
-    dropH:'فایل صوتی را اینجا رها کنید',dropP:'یا کلیک کنید · mp3 · m4a · wav · ogg · webm',
-    extLabel:'استخراج',formulas:'فرمول‌ها',terms:'اصطلاحات',summary:'خلاصه',
-    modeLabel:'حالت آنالیز',fastDesc:'تشخیص سریع فرمول + خلاصه Gemini',accDesc:'NVIDIA + Gemini — پوشش کامل',fastBadge:'پیش‌فرض',accBadge:'+Gemini',
-    analyze:'آنالیز درس ←',copy:'📋 کپی متن',dlTxt:'⬇ دانلود .txt',dlPdf:'📄 دانلود PDF',
-    tabTr:'متن',tabFo:'فرمول‌ها',tabTe:'اصطلاحات',tabSu:'خلاصه',
-    trTitle:'متن کامل',fTitle:'فرمول‌ها و معادلات',tTitle:'اصطلاحات فنی',sTitle:'نکات کلیدی',
-    noFormulas:'فرمولی یافت نشد',noTerms:'اصطلاحی یافت نشد',noSummary:'خلاصه‌ای در دسترس نیست',
-    dark:'حالت تاریک',light:'حالت روشن',large:'📦 فایل بزرگ — به بخش‌های کوچکتر تقسیم می‌شود.',
-    today:'امروز',month:'ماه',year:'سال'},
+    today:'Today',month:'Month',year:'Year',all:'Total'},
   ar:{badge:'مساعد المحاضرات',sub:'ارفع تسجيلاً — احصل على النص والمعادلات والمصطلحات والملخص',
-    voiceLangLabel:'لغة التسجيل',recLabel:'التسجيل',
+    recLabel:'التسجيل',
     dropH:'أسقط ملف الصوت هنا',dropP:'أو انقر للتصفح · mp3 · m4a · wav',
     extLabel:'استخراج',formulas:'المعادلات',terms:'المصطلحات',summary:'الملخص',
     modeLabel:'وضع التحليل',fastDesc:'كشف سريع للمعادلات + ملخص Gemini',accDesc:'NVIDIA + Gemini — تغطية شاملة',fastBadge:'افتراضي',accBadge:'+Gemini',
@@ -503,9 +469,9 @@ var T={
     trTitle:'النص الكامل',fTitle:'المعادلات والصيغ',tTitle:'المصطلحات التقنية',sTitle:'النقاط الرئيسية',
     noFormulas:'لم يتم اكتشاف معادلات',noTerms:'لم يتم اكتشاف مصطلحات',noSummary:'لا يوجد ملخص',
     dark:'الوضع المظلم',light:'الوضع الفاتح',large:'📦 ملف كبير — سيتم تقسيمه.',
-    today:'اليوم',month:'الشهر',year:'السنة'},
+    today:'اليوم',month:'الشهر',year:'السنة',all:'الإجمالي'},
   de:{badge:'KI Vorlesungsassistent',sub:'Lade eine Aufnahme hoch — erhalte Transkript, Formeln, Begriffe & Zusammenfassung',
-    voiceLangLabel:'Aufnahmesprache',recLabel:'Aufnahme',
+    recLabel:'Aufnahme',
     dropH:'Audiodatei hier ablegen',dropP:'oder klicken · mp3 · m4a · wav · ogg · webm',
     extLabel:'Extrahieren',formulas:'Formeln',terms:'Begriffe',summary:'Zusammenfassung',
     modeLabel:'Analysemodus',fastDesc:'Schnelle Formelerkennung + Gemini Zusammenfassung',accDesc:'NVIDIA + Gemini — maximale Abdeckung',fastBadge:'Standard',accBadge:'+Gemini',
@@ -514,9 +480,9 @@ var T={
     trTitle:'Volles Transkript',fTitle:'Formeln & Gleichungen',tTitle:'Fachbegriffe',sTitle:'Kernpunkte',
     noFormulas:'Keine Formeln erkannt',noTerms:'Keine Begriffe erkannt',noSummary:'Keine Zusammenfassung',
     dark:'Dunkelmodus',light:'Hellmodus',large:'📦 Große Datei — wird aufgeteilt.',
-    today:'Heute',month:'Monat',year:'Jahr'},
+    today:'Heute',month:'Monat',year:'Jahr',all:'Gesamt'},
   fr:{badge:'Assistant IA de cours',sub:'Téléchargez un enregistrement — obtenez transcription, formules, termes & résumé',
-    voiceLangLabel:"Langue de l'enregistrement",recLabel:'Enregistrement',
+    recLabel:'Enregistrement',
     dropH:'Déposez votre fichier audio ici',dropP:'ou cliquez pour parcourir · mp3 · m4a · wav',
     extLabel:'Extraire',formulas:'Formules',terms:'Termes',summary:'Résumé',
     modeLabel:"Mode d'analyse",fastDesc:'Détection rapide + résumé Gemini',accDesc:'NVIDIA + Gemini — couverture maximale',fastBadge:'Défaut',accBadge:'+Gemini',
@@ -525,9 +491,9 @@ var T={
     trTitle:'Transcription complète',fTitle:'Formules & Équations',tTitle:'Termes techniques',sTitle:'Points clés',
     noFormulas:'Aucune formule détectée',noTerms:'Aucun terme détecté',noSummary:'Aucun résumé disponible',
     dark:'Mode sombre',light:'Mode clair',large:'📦 Fichier volumineux — sera divisé.',
-    today:"Aujourd'hui",month:'Mois',year:'Année'},
+    today:"Aujourd'hui",month:'Mois',year:'Année',all:'Total'},
   es:{badge:'Asistente IA de clases',sub:'Sube una grabación — obtén transcripción, fórmulas, términos y resumen',
-    voiceLangLabel:'Idioma de grabación',recLabel:'Grabación',
+    recLabel:'Grabación',
     dropH:'Suelta tu archivo de audio aquí',dropP:'o haz clic para buscar · mp3 · m4a · wav',
     extLabel:'Extraer',formulas:'Fórmulas',terms:'Términos',summary:'Resumen',
     modeLabel:'Modo de análisis',fastDesc:'Detección rápida + resumen Gemini',accDesc:'NVIDIA + Gemini — cobertura máxima',fastBadge:'Por defecto',accBadge:'+Gemini',
@@ -536,9 +502,9 @@ var T={
     trTitle:'Transcripción completa',fTitle:'Fórmulas y Ecuaciones',tTitle:'Términos técnicos',sTitle:'Puntos clave',
     noFormulas:'No se detectaron fórmulas',noTerms:'No se detectaron términos',noSummary:'No hay resumen disponible',
     dark:'Modo oscuro',light:'Modo claro',large:'📦 Archivo grande — se dividirá.',
-    today:'Hoy',month:'Mes',year:'Año'},
+    today:'Hoy',month:'Mes',year:'Año',all:'Total'},
   ru:{badge:'ИИ-ассистент лекций',sub:'Загрузите запись — получите транскрипт, формулы, термины и резюме',
-    voiceLangLabel:'Язык записи',recLabel:'Запись',
+    recLabel:'Запись',
     dropH:'Перетащите аудиофайл сюда',dropP:'или нажмите для выбора · mp3 · m4a · wav',
     extLabel:'Извлечь',formulas:'Формулы',terms:'Термины',summary:'Резюме',
     modeLabel:'Режим анализа',fastDesc:'Быстрое обнаружение формул + резюме Gemini',accDesc:'NVIDIA + Gemini — максимальное покрытие',fastBadge:'По умолчанию',accBadge:'+Gemini',
@@ -547,9 +513,9 @@ var T={
     trTitle:'Полный транскрипт',fTitle:'Формулы и уравнения',tTitle:'Технические термины',sTitle:'Ключевые моменты',
     noFormulas:'Формулы не обнаружены',noTerms:'Термины не обнаружены',noSummary:'Резюме недоступно',
     dark:'Тёмный режим',light:'Светлый режим',large:'📦 Большой файл — будет разделён.',
-    today:'Сегодня',month:'Месяц',year:'Год'},
+    today:'Сегодня',month:'Месяц',year:'Год',all:'Всего'},
   zh:{badge:'AI课堂助手',sub:'上传录音 — 获取文字稿、公式、术语和摘要',
-    voiceLangLabel:'录音语言',recLabel:'录音',
+    recLabel:'录音',
     dropH:'将音频文件拖放至此',dropP:'或点击浏览 · mp3 · m4a · wav',
     extLabel:'提取',formulas:'公式',terms:'术语',summary:'摘要',
     modeLabel:'分析模式',fastDesc:'快速公式检测 + Gemini摘要',accDesc:'NVIDIA + Gemini — 最大覆盖',fastBadge:'默认',accBadge:'+Gemini',
@@ -558,9 +524,9 @@ var T={
     trTitle:'完整文字稿',fTitle:'公式和方程',tTitle:'技术术语',sTitle:'要点',
     noFormulas:'未检测到公式',noTerms:'未检测到术语',noSummary:'暂无摘要',
     dark:'深色模式',light:'浅色模式',large:'📦 大文件 — 将被分割处理。',
-    today:'今天',month:'本月',year:'本年'},
+    today:'今天',month:'本月',year:'本年',all:'总计'},
   ja:{badge:'AI講義アシスタント',sub:'録音をアップロード — 文字起こし、数式、用語、要約を取得',
-    voiceLangLabel:'録音言語',recLabel:'録音',
+    recLabel:'録音',
     dropH:'音声ファイルをここにドロップ',dropP:'またはクリックして選択 · mp3 · m4a · wav',
     extLabel:'抽出',formulas:'数式',terms:'用語',summary:'要約',
     modeLabel:'分析モード',fastDesc:'高速数式検出 + Gemini要約',accDesc:'NVIDIA + Gemini — 最大カバレッジ',fastBadge:'デフォルト',accBadge:'+Gemini',
@@ -569,9 +535,9 @@ var T={
     trTitle:'全文字起こし',fTitle:'数式と方程式',tTitle:'専門用語',sTitle:'重要ポイント',
     noFormulas:'数式が検出されませんでした',noTerms:'用語が検出されませんでした',noSummary:'要約がありません',
     dark:'ダークモード',light:'ライトモード',large:'📦 大きなファイル — 分割して処理します。',
-    today:'今日',month:'今月',year:'今年'},
+    today:'今日',month:'今月',year:'今年',all:'合計'},
   tr:{badge:'Yapay Zeka Ders Asistanı',sub:'Kayıt yükle — transkript, formüller, terimler ve özet al',
-    voiceLangLabel:'Kayıt Dili',recLabel:'Kayıt',
+    recLabel:'Kayıt',
     dropH:'Ses dosyanızı buraya bırakın',dropP:'veya tıklayın · mp3 · m4a · wav',
     extLabel:'Çıkar',formulas:'Formüller',terms:'Terimler',summary:'Özet',
     modeLabel:'Analiz modu',fastDesc:'Hızlı formül tespiti + Gemini özet',accDesc:'NVIDIA + Gemini — maksimum kapsam',fastBadge:'Varsayılan',accBadge:'+Gemini',
@@ -580,9 +546,9 @@ var T={
     trTitle:'Tam Transkript',fTitle:'Formüller ve Denklemler',tTitle:'Teknik Terimler',sTitle:'Ana Noktalar',
     noFormulas:'Formül tespit edilmedi',noTerms:'Terim tespit edilmedi',noSummary:'Özet mevcut değil',
     dark:'Karanlık mod',light:'Aydınlık mod',large:'📦 Büyük dosya — parçalara bölünecek.',
-    today:'Bugün',month:'Ay',year:'Yıl'},
+    today:'Bugün',month:'Ay',year:'Yıl',all:'Toplam'},
   hi:{badge:'AI लेक्चर असिस्टेंट',sub:'रिकॉर्डिंग अपलोड करें — ट्रांसक्रिप्ट, फॉर्मूले, शब्द और सारांश पाएं',
-    voiceLangLabel:'रिकॉर्डिंग भाषा',recLabel:'रिकॉर्डिंग',
+    recLabel:'रिकॉर्डिंग',
     dropH:'अपनी ऑडियो फ़ाइल यहाँ छोड़ें',dropP:'या क्लिक करें · mp3 · m4a · wav',
     extLabel:'निकालें',formulas:'फॉर्मूले',terms:'शब्द',summary:'सारांश',
     modeLabel:'विश्लेषण मोड',fastDesc:'तेज़ फॉर्मूला पहचान + Gemini सारांश',accDesc:'NVIDIA + Gemini — पूर्ण कवरेज',fastBadge:'डिफ़ॉल्ट',accBadge:'+Gemini',
@@ -591,9 +557,9 @@ var T={
     trTitle:'पूर्ण ट्रांसक्रिप्ट',fTitle:'फॉर्मूले और समीकरण',tTitle:'तकनीकी शब्द',sTitle:'मुख्य बिंदु',
     noFormulas:'कोई फॉर्मूला नहीं मिला',noTerms:'कोई शब्द नहीं मिला',noSummary:'कोई सारांश उपलब्ध नहीं',
     dark:'डार्क मोड',light:'लाइट मोड',large:'📦 बड़ी फ़ाइल — टुकड़ों में विभाजित होगी।',
-    today:'आज',month:'महीना',year:'साल'},
+    today:'आज',month:'महीना',year:'साल',all:'कुल'},
   pt:{badge:'Assistente de Aulas com IA',sub:'Envie uma gravação — obtenha transcrição, fórmulas, termos e resumo',
-    voiceLangLabel:'Idioma da gravação',recLabel:'Gravação',
+    recLabel:'Gravação',
     dropH:'Solte seu arquivo de áudio aqui',dropP:'ou clique para procurar · mp3 · m4a · wav',
     extLabel:'Extrair',formulas:'Fórmulas',terms:'Termos',summary:'Resumo',
     modeLabel:'Modo de análise',fastDesc:'Detecção rápida + resumo Gemini',accDesc:'NVIDIA + Gemini — cobertura máxima',fastBadge:'Padrão',accBadge:'+Gemini',
@@ -602,24 +568,17 @@ var T={
     trTitle:'Transcrição completa',fTitle:'Fórmulas e Equações',tTitle:'Termos técnicos',sTitle:'Pontos principais',
     noFormulas:'Nenhuma fórmula detectada',noTerms:'Nenhum termo detectado',noSummary:'Nenhum resumo disponível',
     dark:'Modo escuro',light:'Modo claro',large:'📦 Arquivo grande — será dividido.',
-    today:'Hoje',month:'Mês',year:'Ano'}
+    today:'Hoje',month:'Mês',year:'Ano',all:'Total'}
 };
-
-function selVoiceLang(l){
-  curVoiceLang=l;
-  document.getElementById('vlEn').classList.toggle('sel',l==='en');
-  document.getElementById('vlFa').classList.toggle('sel',l==='fa');
-}
 
 function setLang(l){
   curLang=l;
   var t=T[l]||T.en;
-  var rtl=l==='fa'||l==='ar';
+  var rtl=l==='ar';
   document.documentElement.setAttribute('dir',rtl?'rtl':'ltr');
   localStorage.setItem('lang',l);
   var s=function(id,v){var e=document.getElementById(id);if(e)e.textContent=v;};
   s('uBadge',t.badge); s('uSub',t.sub);
-  s('uVoiceLangLabel',t.voiceLangLabel);
   s('uRecLabel',t.recLabel); s('uDropH',t.dropH); s('uDropP',t.dropP);
   s('uExtLabel',t.extLabel); s('uFormulas',t.formulas); s('uTerms',t.terms); s('uSummary',t.summary);
   s('uModeLabel',t.modeLabel);
@@ -629,7 +588,7 @@ function setLang(l){
   s('uTabTr',t.tabTr); s('uTabFo',t.tabFo); s('uTabTe',t.tabTe); s('uTabSu',t.tabSu);
   s('uTrTitle',t.trTitle); s('uFTitle',t.fTitle); s('uTTitle',t.tTitle); s('uSTitle',t.sTitle);
   s('uNoFormulas',t.noFormulas);
-  s('uToday',t.today); s('uMonth',t.month); s('uYear',t.year);
+  s('uToday',t.today); s('uMonth',t.month); s('uYear',t.year); s('uAll',t.all);
   var go=document.getElementById('go'); if(go)go.textContent=t.analyze;
   var cp=document.getElementById('cpbtn'); if(cp)cp.textContent=t.copy;
   var isDark=document.body.classList.contains('dark');
@@ -658,6 +617,7 @@ function setLang(l){
     document.getElementById('statToday').textContent=d.today||0;
     document.getElementById('statMonth').textContent=d.month||0;
     document.getElementById('statYear').textContent=d.year||0;
+    document.getElementById('statAll').textContent=d.all||0;
   }).catch(function(){});
 })();
 
@@ -714,17 +674,7 @@ function resample(input,inRate,outRate){
   return out;
 }
 
-function buildWav(pcm,sr,is16){
-  if(is16){
-    var n=pcm.length,buf=new ArrayBuffer(44+n*2),v=new DataView(buf);
-    var ws=function(o,s){for(var i=0;i<s.length;i++)v.setUint8(o+i,s.charCodeAt(i));};
-    ws(0,'RIFF');v.setUint32(4,36+n*2,true);ws(8,'WAVE');
-    ws(12,'fmt ');v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,1,true);
-    v.setUint32(24,sr,true);v.setUint32(28,sr*2,true);v.setUint16(32,2,true);v.setUint16(34,16,true);
-    ws(36,'data');v.setUint32(40,n*2,true);
-    for(var i=0;i<n;i++){var s=Math.max(-1,Math.min(1,pcm[i]));var val=s<0?s*32768:s*32767;v.setInt16(44+i*2,Math.round(val),true);}
-    return new Blob([buf],{type:'audio/wav'});
-  }
+function buildWav(pcm,sr){
   var n=pcm.length,buf=new ArrayBuffer(44+n),v=new DataView(buf);
   var ws=function(o,s){for(var i=0;i<s.length;i++)v.setUint8(o+i,s.charCodeAt(i));};
   ws(0,'RIFF');v.setUint32(4,36+n,true);ws(8,'WAVE');
@@ -744,11 +694,9 @@ async function toWavChunks(file){
   var nCh=decoded.numberOfChannels,n=decoded.length,mono=new Float32Array(n);
   for(var ch=0;ch<nCh;ch++){var src=decoded.getChannelData(ch);for(var i=0;i<n;i++)mono[i]+=src[i];}
   if(nCh>1)for(var i=0;i<n;i++)mono[i]/=nCh;
-  var isFa=curVoiceLang==='fa';
-  var sr=isFa?16000:TARGET_SR;
-  var rs=resample(mono,decoded.sampleRate,sr);
-  var cs=sr*CHUNK_SECS,chunks=[];
-  for(var s=0;s<rs.length;s+=cs)chunks.push(buildWav(rs.subarray(s,Math.min(s+cs,rs.length)),sr,isFa));
+  var rs=resample(mono,decoded.sampleRate,TARGET_SR);
+  var cs=TARGET_SR*CHUNK_SECS,chunks=[];
+  for(var s=0;s<rs.length;s+=cs)chunks.push(buildWav(rs.subarray(s,Math.min(s+cs,rs.length)),TARGET_SR));
   prog(22,'\u2705 '+chunks.length+' chunk'+(chunks.length>1?'s':'')+' ready');
   return chunks;
 }
@@ -758,7 +706,6 @@ function upload(blob,idx,total){
     var fd=new FormData();
     fd.append('file',blob,'chunk_'+idx+'.wav');
     fd.append('action','transcribe');
-    fd.append('voiceLang',curVoiceLang);
     var xhr=new XMLHttpRequest();
     xhr.open('POST','/process');
     xhr.upload.addEventListener('progress',function(e){
@@ -815,7 +762,6 @@ var TM={chemical:{c:'tc',l:'Chemical'},statistical:{c:'ts',l:'Statistical'},math
 function render(opts,useBoth){
   var t=T[curLang]||T.en;
   document.getElementById('trTxt').textContent=rData.transcript||'';
-  document.getElementById('trTxt').classList.toggle('rtl',curVoiceLang==='fa');
   document.getElementById('fleg').innerHTML=
     '<span class="li lc">Chemical</span><span class="li ls">Statistical</span><span class="li lm">Mathematical</span><span class="li lp">Pharmacological</span>'+
     (useBoth?'<span class="li lb" style="margin-left:auto">Both</span><span class="li lg">Gemini</span><span class="li ln">NVIDIA</span>':'');
