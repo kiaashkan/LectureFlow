@@ -94,7 +94,7 @@ Verbal to notation:
 Return ONLY valid JSON: {"formulas":[{"formula":"...","name":"...","type":"statistical|mathematical|chemical|pharmacological|other","context":"exact quote max 20 words"}]}
 If no formulas found return: {"formulas":[]}`;
 
-          const FUSER = `Transcript:\n"""\n${text.substring(0, 12000)}\n"""\nExtract ALL formulas including verbal descriptions. Return only JSON.`;
+          const FUSER = `Transcript:\n"""\n${text}\n"""\nExtract ALL formulas including verbal descriptions. Return only JSON.`;
           const TPROMPT = `Analyze this university lecture transcript. Return ONLY valid JSON with no extra text:
 {"terms":[{"term":"Confidence Interval"},{"term":"Sample Proportion"}],"points":["Key point 1","Key point 2"]}
 Rules: 10-20 important technical terms, 5-8 key takeaways.
@@ -114,18 +114,15 @@ TRANSCRIPT:\n"""\n${text.substring(0, 16000)}\n"""`;
 
           const nvidiaCall = () => {
             if (!hasFormulaIndicators) return Promise.resolve({ formulas: [] });
-            const ctrl = new AbortController();
-            const timer = setTimeout(() => ctrl.abort(), 30000);
             return fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
               method: 'POST',
-              signal: ctrl.signal,
               headers: { 'Authorization': `Bearer ${env.NVIDIA_API_KEY}`, 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 model: 'meta/llama-3.3-70b-instruct',
                 messages: [{ role: 'system', content: FSYS }, { role: 'user', content: FUSER }],
-                temperature: 0.1, max_tokens: 1200, response_format: { type: 'json_object' }
+                temperature: 0.1, max_tokens: 4000, response_format: { type: 'json_object' }
               })
-            }).then(async r => { clearTimeout(timer); return safeJson((await r.json()).choices?.[0]?.message?.content || '{}', { formulas: [] }); })
+            }).then(async r => safeJson((await r.json()).choices?.[0]?.message?.content || '{}', { formulas: [] }))
               .catch(() => ({ formulas: [] }));
           };
 
@@ -174,21 +171,7 @@ return `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>LectureFlow — AI Lecture Analysis & Transcription</title>
-<meta name="description" content="Upload a university lecture recording and instantly get a full transcript, extracted formulas, technical terms, and an AI-generated summary. Free AI-powered lecture assistant.">
-<meta name="keywords" content="lecture transcription, AI lecture notes, formula extraction, university lecture summary, speech to text lecture, lecture analysis tool">
-<meta name="robots" content="index, follow">
-<meta name="author" content="KiA Ashkan">
-<link rel="canonical" href="https://lf.kiaashkan.workers.dev/">
-<meta property="og:type" content="website">
-<meta property="og:url" content="https://lf.kiaashkan.workers.dev/">
-<meta property="og:title" content="LectureFlow — AI Lecture Analysis & Transcription">
-<meta property="og:description" content="Upload a university lecture recording and instantly get a full transcript, extracted formulas, technical terms, and an AI-generated summary.">
-<meta property="og:site_name" content="LectureFlow">
-<meta name="twitter:card" content="summary">
-<meta name="twitter:title" content="LectureFlow — AI Lecture Analysis & Transcription">
-<meta name="twitter:description" content="Upload a university lecture recording and instantly get transcript, formulas, terms, and summary powered by AI.">
-<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebApplication","name":"LectureFlow","url":"https://lf.kiaashkan.workers.dev/","description":"AI-powered lecture analysis platform. Upload audio recordings to get transcripts, formula extraction, technical terms, and summaries.","applicationCategory":"EducationApplication","operatingSystem":"Web","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"author":{"@type":"Person","name":"KiA Ashkan"}}</script>
+<title>LectureFlow</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg width='80' height='80' viewBox='0 0 80 80' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Crect width='80' height='80' rx='22' fill='%23f8fafc'/%3E%3Crect width='80' height='80' rx='22' fill='none' stroke='%23e2e8f0' stroke-width='1.5'/%3E%3Crect x='8' y='44' width='10' height='20' rx='4' fill='%2394a3b8'/%3E%3Crect x='22' y='32' width='10' height='32' rx='4' fill='%2364748b'/%3E%3Crect x='36' y='16' width='10' height='48' rx='4' fill='%232563eb'/%3E%3Crect x='50' y='24' width='10' height='40' rx='4' fill='%233b82f6'/%3E%3Crect x='64' y='36' width='10' height='28' rx='4' fill='%2364748b'/%3E%3C/svg%3E">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
 <style>
@@ -462,7 +445,7 @@ body.dark .err{background:#3a1620;border-color:#5c2230;color:#fda4af;}
 
 <script>
 var selFile=null,rData={},curLang='en';
-const TARGET_SR=8000,CHUNK_SECS=720;
+const TARGET_SR=16000,CHUNK_SECS=720;
 
 var T={
   en:{badge:'AI Lecture Assistant',sub:'Upload a recording — get transcript, formulas, terms & summary',
@@ -692,13 +675,13 @@ function resample(input,inRate,outRate){
 }
 
 function buildWav(pcm,sr){
-  var n=pcm.length,buf=new ArrayBuffer(44+n),v=new DataView(buf);
+  var n=pcm.length,buf=new ArrayBuffer(44+n*2),v=new DataView(buf);
   var ws=function(o,s){for(var i=0;i<s.length;i++)v.setUint8(o+i,s.charCodeAt(i));};
-  ws(0,'RIFF');v.setUint32(4,36+n,true);ws(8,'WAVE');
+  ws(0,'RIFF');v.setUint32(4,36+n*2,true);ws(8,'WAVE');
   ws(12,'fmt ');v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,1,true);
-  v.setUint32(24,sr,true);v.setUint32(28,sr,true);v.setUint16(32,1,true);v.setUint16(34,8,true);
-  ws(36,'data');v.setUint32(40,n,true);
-  for(var i=0;i<n;i++){var s=Math.max(-1,Math.min(1,pcm[i]));v.setUint8(44+i,Math.round((s+1)*127.5));}
+  v.setUint32(24,sr,true);v.setUint32(28,sr*2,true);v.setUint16(32,2,true);v.setUint16(34,16,true);
+  ws(36,'data');v.setUint32(40,n*2,true);
+  for(var i=0;i<n;i++){var s=Math.max(-1,Math.min(1,pcm[i]));v.setInt16(44+i*2,Math.round(s*32767),true);}
   return new Blob([buf],{type:'audio/wav'});
 }
 
