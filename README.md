@@ -20,7 +20,6 @@ Built for students, researchers, educators, and anyone who needs AI-powered lect
 ![LectureFlow](https://img.shields.io/badge/Cloudflare-Workers-F38020?style=flat\&logo=cloudflare)
 ![Groq](https://img.shields.io/badge/Groq-Whisper-orange?style=flat)
 ![NVIDIA](https://img.shields.io/badge/NVIDIA-NIM-76B900?style=flat)
-![Gemini](https://img.shields.io/badge/Google-Gemini-4285F4?style=flat)
 
 🔗 **Live Demo:** [lf.kiaashkan.workers.dev](https://lf.kiaashkan.workers.dev)
 
@@ -35,10 +34,7 @@ https://github.com/kiaashkan/LectureFlow-app
 * 🧪 **Formula extraction & validation** — detects and validates spoken formulas from lectures
 * 💊 **Technical terms extraction** — identifies important terminology
 * 📋 **AI Summary** — generates concise lecture summaries
-* ⚡ **Two analysis modes**
-
-  * Fast Mode (NVIDIA NIM)
-  * Accurate Mode (NVIDIA NIM + Gemini)
+* 🧠 **Lecture analysis** — Mistral Large 4 via NVIDIA NIM
 * 📱 **Android app available** — open-source Android client
 * 🌙 **Dark / Light mode**
 * 📱 **Mobile friendly**
@@ -58,12 +54,8 @@ Groq Whisper
 Transcript
       │
       ▼
-NVIDIA NIM
-(Formula Detection)
-      │
-      ▼
-Google Gemini
-(Validation & Analysis)
+Mistral Large 4 via NVIDIA NIM
+(Formula, terms & summary analysis)
       │
       ▼
 ┌─────────────────────────┐
@@ -91,8 +83,7 @@ Build it yourself, customize it, or connect it to your own deployment.
 | Service            | Usage                              | Free Tier |
 | ------------------ | ---------------------------------- | --------- |
 | Groq               | Audio transcription (Whisper)      | ✅ Free    |
-| NVIDIA NIM         | Formula extraction (Llama 3.3 70B) | ✅ Free    |
-| Google Gemini      | Summary, terms, validation         | ✅ Free    |
+| NVIDIA NIM         | Formula, terms & summary analysis (Mistral Large 4) | Free endpoint* |
 | Cloudflare Workers | Hosting & backend                  | ✅ Free    |
 
 ---
@@ -109,15 +100,7 @@ Build it yourself, customize it, or connect it to your own deployment.
 4. Create a new API key
 5. Copy your key (`gsk_...`)
 
-#### Google Gemini (Analysis)
-
-1. Go to https://aistudio.google.com
-2. Sign in
-3. Click Get API Key
-4. Create API Key
-5. Copy your key (`AIza...`)
-
-#### NVIDIA NIM (Formula Extraction)
+#### NVIDIA NIM (Lecture Analysis — Mistral Large 4)
 
 1. Go to https://build.nvidia.com
 2. Create an account
@@ -149,10 +132,11 @@ Create the following secrets:
 | Name           | Value     |
 | -------------- | --------- |
 | GROQ_API_KEY   | gsk_...   |
-| GEMINI_API_KEY | AIza...   |
 | NVIDIA_API_KEY | nvapi-... |
 
 Deploy again after saving.
+
+* NVIDIA free endpoint availability and limits may change.
 
 ---
 
