@@ -1,42 +1,140 @@
+function getDateParts() {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Tehran',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).formatToParts(new Date());
+  const y = parts.find(p => p.type === 'year').value;
+  const m = parts.find(p => p.type === 'month').value;
+  const d = parts.find(p => p.type === 'day').value;
+  return { today: `${y}-${m}-${d}`, monthPrefix: `${y}-${m}-%`, yearPrefix: `${y}-%`, y, m };
+}
+
+async function queryAnalyticsEngine(env) {
+  if (!env.CF_API_TOKEN || !env.CF_ACCOUNT_ID) return null;
+  try {
+    const now = new Date();
+    const tToday = Math.floor(new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime() / 1000);
+    const tMonth = Math.floor(new Date(now.getFullYear(), now.getMonth(), 1).getTime() / 1000);
+    const tYear  = Math.floor(new Date(now.getFullYear(), 0, 1).getTime() / 1000);
+    const sql = `
+      SELECT
+        SUM(IF(timestamp >= toDateTime(${tToday}), _sample_interval, 0)) AS today,
+        SUM(IF(timestamp >= toDateTime(${tMonth}), _sample_interval, 0)) AS month,
+        SUM(IF(timestamp >= toDateTime(${tYear}),  _sample_interval, 0)) AS year,
+        SUM(_sample_interval) AS total
+      FROM page_views
+    `;
+    const r = await fetch(
+      `https://api.cloudflare.com/client/v4/accounts/${env.CF_ACCOUNT_ID}/analytics_engine/sql`,
+      {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${env.CF_API_TOKEN}`, 'Content-Type': 'text/plain' },
+        body: sql
+      }
+    );
+    if (!r.ok) return null;
+    const d = await r.json();
+    const row = d.data?.[0] || {};
+    const today = Math.round(Number(row.today || 0));
+    const month = Math.max(today, Math.round(Number(row.month || 0)));
+    const year  = Math.max(month, Math.round(Number(row.year  || 0)));
+    const all   = Math.max(year,  Math.round(Number(row.total || 0)));
+    return { today, month, year, all };
+  } catch (_) {
+    return null;
+  }
+}
+
+async function ensureStatsTable(env) {
+  await env.DB.prepare(
+    `CREATE TABLE IF NOT EXISTS site_views (day TEXT PRIMARY KEY, views INTEGER NOT NULL DEFAULT 0)`
+  ).run();
+
+  const check = await env.DB.prepare(`SELECT COUNT(*) AS cnt FROM site_views`).first();
+  if (check && Number(check.cnt) > 0) return;
+
+  const seed = (await queryAnalyticsEngine(env)) || { today: 0, month: 0, year: 0, all: 0 };
+  const { today, y, m } = getDateParts();
+  const restMonth = Math.max(0, seed.month - seed.today);
+  const restYear  = Math.max(0, seed.year - seed.month);
+  const restAll   = Math.max(0, seed.all - seed.year);
+
+  await env.DB.batch([
+    env.DB.prepare(`INSERT OR IGNORE INTO site_views (day, views) VALUES (?1, ?2)`).bind(today, Math.max(1, seed.today)),
+    env.DB.prepare(`INSERT OR IGNORE INTO site_views (day, views) VALUES (?1, ?2)`).bind(`${y}-${m}-00`, restMonth),
+    env.DB.prepare(`INSERT OR IGNORE INTO site_views (day, views) VALUES (?1, ?2)`).bind(`${y}-00-00`, restYear),
+    env.DB.prepare(`INSERT OR IGNORE INTO site_views ('day', 'views') VALUES ('2020-00-00', ?1)`).bind(restAll)
+  ]);
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
 
     if (request.method === 'GET' && url.pathname === '/') {
       try {
-        env.ANALYTICS.writeDataPoint({
-          blobs: [request.headers.get('cf-ipcountry') || 'XX'],
-          indexes: ['pageview']
-        });
+        if (env.ANALYTICS) {
+          env.ANALYTICS.writeDataPoint({
+            blobs: [request.headers.get('cf-ipcountry') || 'XX'],
+            indexes: ['pageview'],
+            doubles: [1]
+          });
+        }
+        if (env.DB) {
+          await ensureStatsTable(env);
+          const { today } = getDateParts();
+          await env.DB.prepare(
+            `INSERT INTO site_views (day, views) VALUES (?1, 1)
+             ON CONFLICT(day) DO UPDATE SET views = views + 1`
+          ).bind(today).run();
+        }
       } catch (_) {}
       return new Response(mainPage(), { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
     }
 
     if (request.method === 'GET' && url.pathname === '/stats') {
       try {
-        const token = env.CF_API_TOKEN;
-        const accountId = env.CF_ACCOUNT_ID;
-        const now = new Date();
-        const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
-        const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
-        const yearStart  = new Date(now.getFullYear(), 0, 1).toISOString();
-        const allStart = new Date(2020, 0, 1).toISOString();
-        const query = async (since) => {
-          const r = await fetch(
-            `https://api.cloudflare.com/client/v4/accounts/${accountId}/analytics_engine/sql`,
-            { method: 'POST', headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'text/plain' },
-              body: `SELECT count() AS c FROM page_views WHERE timestamp > toDateTime(${Math.floor(new Date(since).getTime()/1000)})` }
-          );
-          const txt = await r.text();
-          try { const d = JSON.parse(txt); if (!r.ok) return { count: 0 }; return { count: Number(d.data?.[0]?.c || 0) }; }
-          catch(e) { return { count: 0 }; }
-        };
-        const [today, month, year, all] = await Promise.all([query(todayStart), query(monthStart), query(yearStart), query(allStart)]);
-        return new Response(JSON.stringify({ today: today.count, month: month.count, year: year.count, all: all.count }), {
-          headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
-        });
+        if (env.DB) {
+          await ensureStatsTable(env);
+          const { today, monthPrefix, yearPrefix } = getDateParts();
+          const row = await env.DB.prepare(`
+            SELECT
+              COALESCE(SUM(CASE WHEN day = ?1 THEN views ELSE 0 END), 0) AS today,
+              COALESCE(SUM(CASE WHEN day LIKE ?2 THEN views ELSE 0 END), 0) AS month,
+              COALESCE(SUM(CASE WHEN day LIKE ?3 THEN views ELSE 0 END), 0) AS year,
+              COALESCE(SUM(views), 0) AS total
+            FROM site_views
+          `).bind(today, monthPrefix, yearPrefix).first();
+
+          return new Response(JSON.stringify({
+            today: Number(row?.today || 0),
+            month: Number(row?.month || 0),
+            year:  Number(row?.year  || 0),
+            all:   Number(row?.total || 0)
+          }), {
+            headers: {
+              'Content-Type': 'application/json',
+              'Cache-Control': 'no-store, no-cache, must-revalidate',
+              'Access-Control-Allow-Origin': '*'
+            }
+          });
+        }
+
+        const ae = await queryAnalyticsEngine(env);
+        if (ae) {
+          return new Response(JSON.stringify(ae), {
+            headers: {
+              'Content-Type': 'application/json',
+              'Cache-Control': 'no-store, no-cache, must-revalidate',
+              'Access-Control-Allow-Origin': '*'
+            }
+          });
+        }
+        return new Response(JSON.stringify({ error: 'Stats unavailable' }), { status: 503, headers: { 'Content-Type': 'application/json' } });
       } catch (e) {
-        return new Response(JSON.stringify({ today: 0, month: 0, year: 0, all: 0 }), { headers: { 'Content-Type': 'application/json' } });
+        return new Response(JSON.stringify({ error: e.message }), { status: 500, headers: { 'Content-Type': 'application/json' } });
       }
     }
 
@@ -429,6 +527,7 @@ body.dark .err{background:#3a1620;border-color:#5c2230;color:#fda4af;}
         <a href="https://github.com/kiaashkan" target="_blank" title="kiaashkan on GitHub" style="display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border:1px solid var(--bd);border-radius:8px;text-decoration:none;color:var(--td);background:var(--sf);">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.865 8.166 6.839 9.489.5.092.682-.217.682-.482 0-.237-.008-.866-.013-1.7-2.782.604-3.369-1.34-3.369-1.34-.454-1.156-1.11-1.464-1.11-1.464-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.087 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.578 9.578 0 0112 6.836c.85.004 1.705.115 2.504.337 1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.202 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.579.688.481C19.138 20.163 22 16.418 22 12c0-5.523-4.477-10-10-10z"/></svg>
         </a>
+        <a href="https://t.me/kiaashkan" target="_blank" title="Report a bug" style="display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border:1px solid var(--bd);border-radius:8px;text-decoration:none;color:var(--td);background:var(--sf);font-size:16px;">🐛</a>
       </div>
     </div>
     <div style="margin-top:10px;font-size:11px;color:var(--mu);">
@@ -613,11 +712,14 @@ function setLang(l){
 })();
 
 (function(){
-  fetch('/stats').then(function(r){return r.json();}).then(function(d){
-    document.getElementById('statToday').textContent=d.today||0;
-    document.getElementById('statMonth').textContent=d.month||0;
-    document.getElementById('statYear').textContent=d.year||0;
-    document.getElementById('statAll').textContent=d.all||0;
+  fetch('/stats',{cache:'no-store'}).then(function(r){
+    if(!r.ok)throw new Error('Stats error');
+    return r.json();
+  }).then(function(d){
+    if(typeof d.today==='number')document.getElementById('statToday').textContent=d.today;
+    if(typeof d.month==='number')document.getElementById('statMonth').textContent=d.month;
+    if(typeof d.year==='number')document.getElementById('statYear').textContent=d.year;
+    if(typeof d.all==='number')document.getElementById('statAll').textContent=d.all;
   }).catch(function(){});
 })();
 
@@ -674,14 +776,16 @@ function resample(input,inRate,outRate){
   return out;
 }
 
-function buildWav(pcm,sr){
-  var n=pcm.length,buf=new ArrayBuffer(44+n*2),v=new DataView(buf);
+function buildWav(pcm,sr,pad){
+  var padSamples=pad?(sr*3):0;
+  var n=pcm.length+padSamples,buf=new ArrayBuffer(44+n*2),v=new DataView(buf);
   var ws=function(o,s){for(var i=0;i<s.length;i++)v.setUint8(o+i,s.charCodeAt(i));};
   ws(0,'RIFF');v.setUint32(4,36+n*2,true);ws(8,'WAVE');
   ws(12,'fmt ');v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,1,true);
   v.setUint32(24,sr,true);v.setUint32(28,sr*2,true);v.setUint16(32,2,true);v.setUint16(34,16,true);
   ws(36,'data');v.setUint32(40,n*2,true);
-  for(var i=0;i<n;i++){var s=Math.max(-1,Math.min(1,pcm[i]));v.setInt16(44+i*2,Math.round(s*32767),true);}
+  for(var i=0;i<pcm.length;i++){var s=Math.max(-1,Math.min(1,pcm[i]));v.setInt16(44+i*2,Math.round(s*32767),true);}
+  for(var i=0;i<padSamples;i++){v.setInt16(44+(pcm.length+i)*2,0,true);}
   return new Blob([buf],{type:'audio/wav'});
 }
 
@@ -696,7 +800,10 @@ async function toWavChunks(file){
   if(nCh>1)for(var i=0;i<n;i++)mono[i]/=nCh;
   var rs=resample(mono,decoded.sampleRate,TARGET_SR);
   var cs=TARGET_SR*CHUNK_SECS,chunks=[];
-  for(var s=0;s<rs.length;s+=cs)chunks.push(buildWav(rs.subarray(s,Math.min(s+cs,rs.length)),TARGET_SR));
+  for(var s=0;s<rs.length;s+=cs){
+    var isLast=s+cs>=rs.length;
+    chunks.push(buildWav(rs.subarray(s,Math.min(s+cs,rs.length)),TARGET_SR,isLast));
+  }
   prog(22,'\u2705 '+chunks.length+' chunk'+(chunks.length>1?'s':'')+' ready');
   return chunks;
 }
