@@ -15,9 +15,9 @@ Upload a lecture recording and automatically generate:
 * Formula extraction
 * AI-generated summaries
 
-Built for students, researchers, educators, and anyone who needs AI-powered lecture or speech analysis.
+Built for students, researchers, educators, and anyone who needs AI-powered lecture or speech analysis. LectureFlow is designed for real classroom recordings: long files (an hour or more), recorded from the back of the room, with all the noise that comes with that.
 
-![LectureFlow](https://img.shields.io/badge/Cloudflare-Workers-F38020?style=flat\&logo=cloudflare)
+![LectureFlow](https://img.shields.io/badge/Cloudflare-Workers-F38020?style=flat&logo=cloudflare)
 ![Groq](https://img.shields.io/badge/Groq-Whisper-orange?style=flat)
 ![NVIDIA](https://img.shields.io/badge/NVIDIA-NIM-76B900?style=flat)
 
@@ -30,31 +30,39 @@ https://github.com/kiaashkan/LectureFlow-app
 
 ## Features
 
-* 🎙 **Transcription** — converts audio to text using Groq Whisper
+* 🎙 **Transcription** — converts audio to text using Groq Whisper. You choose the model:
+  * 🎯 **Whisper Large v3** — most accurate, slower
+  * ⚡ **Whisper Large v3 Turbo** — faster, slightly less accurate
+* 🗣 **English transcription** — voice-to-text is in English; the interface itself is available in 11 languages
+* ⏱ **Long recordings** — files are automatically split into chunks in the browser, so hour-long lectures are no problem
 * 🧪 **Formula extraction & validation** — detects and validates spoken formulas from lectures
 * 💊 **Technical terms extraction** — identifies important terminology
 * 📋 **AI Summary** — generates concise lecture summaries
-* 🧠 **Lecture analysis** — Mistral Large 4 via NVIDIA NIM
+* 🧠 **Accuracy-first lecture analysis** — MiniMax M3.1 Flash via NVIDIA NIM, with automatic fallbacks (see Architecture)
 * 📱 **Android app available** — open-source Android client
 * 🌙 **Dark / Light mode**
 * 📱 **Mobile friendly**
 * ☁️ **Serverless deployment on Cloudflare Workers**
 
 ---
+
 ## Architecture
 
 ```text
 Audio Recording
       │
       ▼
-Groq Whisper
-(Speech-to-Text)
+Groq Whisper (Large v3 or Turbo — your choice)
+(Speech-to-Text, English)
       │
       ▼
 Transcript
       │
       ▼
-Mistral Large 4 via NVIDIA NIM
+Lecture analysis — accuracy-first provider chain:
+  1. MiniMax M3.1 Flash (NVIDIA NIM)
+  2. GLM-5.3 Flash (NVIDIA NIM)        ← if #1 fails
+  3. Workers AI · Llama 3.3 70B        ← if #2 fails
 (Formula, terms & summary analysis)
       │
       ▼
@@ -82,8 +90,9 @@ Build it yourself, customize it, or connect it to your own deployment.
 
 | Service            | Usage                              | Free Tier |
 | ------------------ | ---------------------------------- | --------- |
-| Groq               | Audio transcription (Whisper)      | ✅ Free    |
-| NVIDIA NIM         | Formula, terms & summary analysis (Mistral Large 4) | Free endpoint* |
+| Groq               | Audio transcription (Whisper Large v3 / Turbo) | ✅ Free    |
+| NVIDIA NIM         | Formula, terms & summary analysis (MiniMax M3.1 Flash, GLM-5.3 Flash) | Free endpoint* |
+| Cloudflare Workers AI | Analysis fallback (Llama 3.3 70B) | ✅ Free    |
 | Cloudflare Workers | Hosting & backend                  | ✅ Free    |
 
 ---
@@ -100,7 +109,7 @@ Build it yourself, customize it, or connect it to your own deployment.
 4. Create a new API key
 5. Copy your key (`gsk_...`)
 
-#### NVIDIA NIM (Lecture Analysis — Mistral Large 4)
+#### NVIDIA NIM (Lecture Analysis — MiniMax M3.1 Flash / GLM-5.3 Flash)
 
 1. Go to https://build.nvidia.com
 2. Create an account
@@ -133,6 +142,14 @@ Create the following secrets:
 | -------------- | --------- |
 | GROQ_API_KEY   | gsk_...   |
 | NVIDIA_API_KEY | nvapi-... |
+
+Optional bindings (used for the analysis fallback and the view counters):
+
+| Binding   | Type             | Name       |
+| --------- | ---------------- | ---------- |
+| AI        | Workers AI       | —          |
+| DB        | D1 database      | lecture-db |
+| ANALYTICS | Analytics Engine | page_views |
 
 Deploy again after saving.
 
