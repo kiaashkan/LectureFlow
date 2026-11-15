@@ -100,7 +100,7 @@ const PWA_MANIFEST = {
     { src: '/icon-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' }
   ]
 };
-const PWA_SW = `const CACHE='lf-pwa-v393';
+const PWA_SW = `const CACHE='lf-pwa-v396';
 const CORE=['/icon-192.png','/icon-512.png','/icon-maskable-512.png','/apple-touch-icon.png'];
 self.addEventListener('install',function(e){e.waitUntil(caches.open(CACHE).then(function(c){return c.addAll(CORE).then(function(){return caches.match('/');}).then(function(old){if(old)return c.put('/',old);});}).then(function(){return self.skipWaiting();}));});
 self.addEventListener('activate',function(e){e.waitUntil(caches.keys().then(function(ks){return Promise.all(ks.filter(function(k){return k!==CACHE;}).map(function(k){return caches.delete(k);}));}).then(function(){return self.clients.claim();}));});
@@ -797,7 +797,7 @@ input[type="file"]{display:none;}
 @keyframes spin{to{transform:rotate(360deg);}}
 #ltxt{font-size:13.5px;font-weight:600;color:var(--tx);}
 .pbar-wrap{background:var(--pn);border-radius:100px;height:8px;overflow:hidden;}
-.pbar{height:100%;background:var(--grad);border-radius:100px;width:0%;transition:width .4s ease;position:relative;}
+.pbar{height:100%;background:var(--grad);border-radius:100px;width:0%;transition:width .4s ease;position:relative;overflow:hidden;}
 .pbar::after{content:'';position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.45),transparent);animation:shine 1.4s infinite;}
 @keyframes shine{from{transform:translateX(-100%)}to{transform:translateX(100%)}}
 .plabel{display:flex;justify-content:space-between;font-size:10.5px;color:var(--td);margin-top:9px;}
