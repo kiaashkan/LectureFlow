@@ -1,14 +1,33 @@
-function getDateParts() {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Tehran',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit'
-  }).formatToParts(new Date());
-  const y = parts.find(p => p.type === 'year').value;
-  const m = parts.find(p => p.type === 'month').value;
-  const d = parts.find(p => p.type === 'day').value;
-  return { today: `${y}-${m}-${d}`, monthPrefix: `${y}-${m}-%`, yearPrefix: `${y}-%`, y, m };
+function datePartsForZone(tz) {
+  try {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: tz,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    }).formatToParts(new Date());
+    const y = parts.find(p => p.type === 'year').value;
+    const m = parts.find(p => p.type === 'month').value;
+    const d = parts.find(p => p.type === 'day').value;
+    return { today: `${y}-${m}-${d}`, monthPrefix: `${y}-${m}-%`, yearPrefix: `${y}-%`, y, m };
+  } catch (_) { return null; }
+}
+
+// No hardcoded timezone: use the zone the caller passes (the visitor's own,
+// from their system via the page, or Cloudflare's detected zone), else UTC.
+function getDateParts(tz) {
+  return datePartsForZone(tz || 'UTC') || datePartsForZone('UTC');
+}
+
+// The page reports its own local calendar (the visitor's system timezone).
+// Accept it only if it is well-formed, self-consistent, and close to now.
+function clientDateParts(url) {
+  const t = url.searchParams.get('today'), mo = url.searchParams.get('month'), y = url.searchParams.get('year');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(t || '') || !/^\d{4}-\d{2}$/.test(mo || '') || !/^\d{4}$/.test(y || '')) return null;
+  if (!t.startsWith(mo) || !t.startsWith(y)) return null;
+  const parsed = Date.parse(t + 'T12:00:00Z');
+  if (isNaN(parsed) || Math.abs(Date.now() - parsed) > 3 * 24 * 3600 * 1000) return null;
+  return { today: t, monthPrefix: mo + '-%', yearPrefix: y + '-%', y, m: mo.slice(5) };
 }
 
 async function queryAnalyticsEngine(env) {
@@ -47,7 +66,7 @@ async function queryAnalyticsEngine(env) {
   }
 }
 
-async function ensureStatsTable(env) {
+async function ensureStatsTable(env, parts) {
   await env.DB.prepare(
     `CREATE TABLE IF NOT EXISTS site_views (day TEXT PRIMARY KEY, views INTEGER NOT NULL DEFAULT 0)`
   ).run();
@@ -56,7 +75,7 @@ async function ensureStatsTable(env) {
   if (check && Number(check.cnt) > 0) return;
 
   const seed = (await queryAnalyticsEngine(env)) || { today: 0, month: 0, year: 0, all: 0 };
-  const { today, y, m } = getDateParts();
+  const { today, y, m } = parts || getDateParts();
   const restMonth = Math.max(0, seed.month - seed.today);
   const restYear  = Math.max(0, seed.year - seed.month);
   const restAll   = Math.max(0, seed.all - seed.year);
@@ -100,7 +119,7 @@ const PWA_MANIFEST = {
     { src: '/icon-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' }
   ]
 };
-const PWA_SW = `const CACHE='lf-pwa-v396';
+const PWA_SW = `const CACHE='lf-pwa-v398';
 const CORE=['/icon-192.png','/icon-512.png','/icon-maskable-512.png','/apple-touch-icon.png'];
 self.addEventListener('install',function(e){e.waitUntil(caches.open(CACHE).then(function(c){return c.addAll(CORE).then(function(){return caches.match('/');}).then(function(old){if(old)return c.put('/',old);});}).then(function(){return self.skipWaiting();}));});
 self.addEventListener('activate',function(e){e.waitUntil(caches.keys().then(function(ks){return Promise.all(ks.filter(function(k){return k!==CACHE;}).map(function(k){return caches.delete(k);}));}).then(function(){return self.clients.claim();}));});
@@ -223,12 +242,7 @@ export default {
           });
         }
         if (env.DB) {
-          await ensureStatsTable(env);
-          const { today } = getDateParts();
-          await env.DB.prepare(
-            `INSERT INTO site_views (day, views) VALUES (?1, 1)
-             ON CONFLICT(day) DO UPDATE SET views = views + 1`
-          ).bind(today).run();
+          await ensureStatsTable(env, getDateParts(request.cf && request.cf.timezone));
         }
       } catch (_) {}
       return new Response(mainPage(), { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
@@ -237,8 +251,15 @@ export default {
     if (request.method === 'GET' && url.pathname === '/stats') {
       try {
         if (env.DB) {
-          await ensureStatsTable(env);
-          const { today, monthPrefix, yearPrefix } = getDateParts();
+          const parts = clientDateParts(url) || getDateParts(request.cf && request.cf.timezone);
+          await ensureStatsTable(env, parts);
+          if (url.searchParams.get('record') === '1') {
+            await env.DB.prepare(
+              `INSERT INTO site_views (day, views) VALUES (?1, 1)
+               ON CONFLICT(day) DO UPDATE SET views = views + 1`
+            ).bind(parts.today).run();
+          }
+          const { today, monthPrefix, yearPrefix } = parts;
           const row = await env.DB.prepare(`
             SELECT
               COALESCE(SUM(CASE WHEN day = ?1 THEN views ELSE 0 END), 0) AS today,
@@ -752,11 +773,17 @@ body.light{--ac:#6366f1;--ac2:#a855f7;--ac-h:#4f46e5;--ac-bg:#eef2ff;--ac-bd:#c7
   --tx:#0b1023;--td:#4a5169;--mu:#8a90a8;--fc:#4f46e5;}
 .wrap{width:100%;max-width:660px;margin:0 auto;}
 .topbar{display:flex;justify-content:flex-end;gap:8px;margin-bottom:26px;}
-.theme-btn{display:flex;align-items:center;gap:6px;padding:8px 16px;background:var(--sf);border:1px solid var(--bd);border-radius:100px;font-size:11.5px;font-weight:600;color:var(--td);cursor:pointer;font-family:'Inter',sans-serif;transition:all .2s;box-shadow:0 2px 8px rgba(16,24,40,.05);}
-.theme-btn:hover{border-color:var(--ac);color:var(--ac);transform:translateY(-1px);}
-.lang-sel{padding:8px 12px;background:var(--sf);border:1px solid var(--bd);border-radius:100px;font-size:11.5px;font-weight:600;color:var(--td);cursor:pointer;font-family:'Inter',sans-serif;transition:all .2s;outline:none;box-shadow:0 2px 8px rgba(16,24,40,.05);}
-.lang-sel:hover{border-color:var(--ac);color:var(--ac);}
-.theme-btn:focus-visible,.lang-sel:focus-visible,.btn:focus-visible,.abtn:focus-visible,.tab:focus-visible{outline:2px solid var(--ac);outline-offset:2px;}
+.ctl-dock{display:inline-flex;align-items:stretch;padding:4px;border-radius:100px;background:var(--sf);border:1px solid var(--bd);box-shadow:0 14px 34px rgba(2,6,23,.16),inset 0 1px 0 rgba(255,255,255,.05);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);}
+.ctl-dock>*+*{border-left:1px solid var(--bd);}
+.ctl{display:flex;align-items:center;gap:7px;padding:2px 8px 2px 13px;border-radius:100px;transition:background .2s;cursor:pointer;}
+.ctl:hover{background:var(--ac-bg);}
+.ctl-ico{font-size:13px;line-height:1;}
+.ctl-sel{appearance:none;-webkit-appearance:none;background-color:transparent;border:none;outline:none;font-family:'Inter',sans-serif;font-size:12px;font-weight:600;color:var(--td);cursor:pointer;padding:7px 19px 7px 1px;background-image:url("data:image/svg+xml;charset=utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%238b93b8' stroke-width='1.8' stroke-linecap='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 3px center;transition:color .2s;}
+.ctl:hover .ctl-sel{color:var(--ac);}
+.ctl-sel option{color:#141830;background:#fff;}
+.theme-btn{display:flex;align-items:center;gap:6px;padding:2px 14px;background:transparent;border:none;border-radius:100px;font-size:12px;font-weight:600;color:var(--td);cursor:pointer;font-family:'Inter',sans-serif;transition:color .2s;}
+.theme-btn:hover{color:var(--ac);}
+.theme-btn:focus-visible,.ctl-sel:focus-visible,.btn:focus-visible,.abtn:focus-visible,.tab:focus-visible{outline:2px solid var(--ac);outline-offset:2px;}
 .header{text-align:center;margin-bottom:30px;}
 .logo-wrap{margin-bottom:18px;display:flex;justify-content:center;}
 .logo-wrap svg{width:84px;height:84px;filter:drop-shadow(0 14px 28px rgba(99,102,241,.35));}
@@ -865,7 +892,8 @@ body.dark .err{background:#3a1620;border-color:#5c2230;color:#fda4af;}
 <body class="light">
 <div class="wrap">
   <div class="topbar">
-    <select class="lang-sel" id="langSel" onchange="setLang(this.value)">
+   <div class="ctl-dock">
+    <label class="ctl"><span class="ctl-ico">🌐</span><select class="ctl-sel" id="langSel" onchange="setLang(this.value)">
       <option value="en">English</option>
       <option value="ar">العربية</option>
       <option value="de">Deutsch</option>
@@ -877,9 +905,14 @@ body.dark .err{background:#3a1620;border-color:#5c2230;color:#fda4af;}
       <option value="tr">Türkçe</option>
       <option value="hi">हिन्दी</option>
       <option value="pt">Português</option>
-    </select>
+    </select></label>
     <button class="theme-btn" id="installBtn" style="display:none" onclick="installApp()"><span>📲</span><span id="uInstall">Install app</span></button>
-    <button class="theme-btn" onclick="toggleTheme()"><span id="tl">Dark mode</span></button>
+    <label class="ctl"><span class="ctl-ico" id="themeIco">🌗</span><select class="ctl-sel" id="themeSel" onchange="setTheme(this.value)">
+      <option value="l">Light</option>
+      <option value="d">Dark</option>
+      <option value="s">System</option>
+    </select></label>
+   </div>
   </div>
 
   <div class="header">
@@ -1060,7 +1093,7 @@ var T={
     tabTr:'Transcript',tabFo:'Formulas',tabTe:'Terms',tabSu:'Summary',
     trTitle:'Full Transcript',fTitle:'Formulas & Equations',tTitle:'Technical Terms',sTitle:'Key Points',
     noFormulas:'No formulas detected',noTerms:'No terms detected',noSummary:'No summary available',
-    dark:'Dark mode',light:'Light mode',large:'📦 Large file — will be split into chunks.',
+    dark:'Dark mode',light:'Light mode',thLight:'Light',thDark:'Dark',thSystem:'System',large:'📦 Large file — will be split into chunks.',
     today:'Today',month:'Month',year:'Year',all:'Total',install:'Install app',iosHint:'To install: tap the Share button, then “Add to Home Screen”.'},
   ar:{badge:'مساعد المحاضرات',sub:'ارفع تسجيلاً — احصل على النص والمعادلات والمصطلحات والملخص',
     recLabel:'التسجيل',
@@ -1071,7 +1104,7 @@ var T={
     tabTr:'النص',tabFo:'المعادلات',tabTe:'المصطلحات',tabSu:'الملخص',
     trTitle:'النص الكامل',fTitle:'المعادلات والصيغ',tTitle:'المصطلحات التقنية',sTitle:'النقاط الرئيسية',
     noFormulas:'لم يتم اكتشاف معادلات',noTerms:'لم يتم اكتشاف مصطلحات',noSummary:'لا يوجد ملخص',
-    dark:'الوضع المظلم',light:'الوضع الفاتح',large:'📦 ملف كبير — سيتم تقسيمه.',
+    dark:'الوضع المظلم',light:'الوضع الفاتح',thLight:'فاتح',thDark:'داكن',thSystem:'النظام',large:'📦 ملف كبير — سيتم تقسيمه.',
     today:'اليوم',month:'الشهر',year:'السنة',all:'الإجمالي',install:'تثبيت التطبيق',iosHint:'للتثبيت: اضغط زر المشاركة، ثم «إضافة إلى الشاشة الرئيسية».'},
   de:{badge:'KI Vorlesungsassistent',sub:'Lade eine Aufnahme hoch — erhalte Transkript, Formeln, Begriffe & Zusammenfassung',
     recLabel:'Aufnahme',
@@ -1082,7 +1115,7 @@ var T={
     tabTr:'Transkript',tabFo:'Formeln',tabTe:'Begriffe',tabSu:'Zusammenfassung',
     trTitle:'Volles Transkript',fTitle:'Formeln & Gleichungen',tTitle:'Fachbegriffe',sTitle:'Kernpunkte',
     noFormulas:'Keine Formeln erkannt',noTerms:'Keine Begriffe erkannt',noSummary:'Keine Zusammenfassung',
-    dark:'Dunkelmodus',light:'Hellmodus',large:'📦 Große Datei — wird aufgeteilt.',
+    dark:'Dunkelmodus',light:'Hellmodus',thLight:'Hell',thDark:'Dunkel',thSystem:'System',large:'📦 Große Datei — wird aufgeteilt.',
     today:'Heute',month:'Monat',year:'Jahr',all:'Gesamt',install:'App installieren',iosHint:'Zum Installieren: Tippe auf „Teilen“ und dann auf „Zum Home-Bildschirm“.'},
   fr:{badge:'Assistant IA de cours',sub:'Téléchargez un enregistrement — obtenez transcription, formules, termes & résumé',
     recLabel:'Enregistrement',
@@ -1093,7 +1126,7 @@ var T={
     tabTr:'Transcription',tabFo:'Formules',tabTe:'Termes',tabSu:'Résumé',
     trTitle:'Transcription complète',fTitle:'Formules & Équations',tTitle:'Termes techniques',sTitle:'Points clés',
     noFormulas:'Aucune formule détectée',noTerms:'Aucun terme détecté',noSummary:'Aucun résumé disponible',
-    dark:'Mode sombre',light:'Mode clair',large:'📦 Fichier volumineux — sera divisé.',
+    dark:'Mode sombre',light:'Mode clair',thLight:'Clair',thDark:'Sombre',thSystem:'Système',large:'📦 Fichier volumineux — sera divisé.',
     today:"Aujourd'hui",month:'Mois',year:'Année',all:'Total',install:'Installer l’app',iosHint:'Pour installer : touchez Partager, puis « Ajouter à l’écran d’accueil ».'},
   es:{badge:'Asistente IA de clases',sub:'Sube una grabación — obtén transcripción, fórmulas, términos y resumen',
     recLabel:'Grabación',
@@ -1104,7 +1137,7 @@ var T={
     tabTr:'Transcripción',tabFo:'Fórmulas',tabTe:'Términos',tabSu:'Resumen',
     trTitle:'Transcripción completa',fTitle:'Fórmulas y Ecuaciones',tTitle:'Términos técnicos',sTitle:'Puntos clave',
     noFormulas:'No se detectaron fórmulas',noTerms:'No se detectaron términos',noSummary:'No hay resumen disponible',
-    dark:'Modo oscuro',light:'Modo claro',large:'📦 Archivo grande — se dividirá.',
+    dark:'Modo oscuro',light:'Modo claro',thLight:'Claro',thDark:'Oscuro',thSystem:'Sistema',large:'📦 Archivo grande — se dividirá.',
     today:'Hoy',month:'Mes',year:'Año',all:'Total',install:'Instalar la app',iosHint:'Para instalar: toca Compartir y luego «Añadir a la pantalla de inicio».'},
   ru:{badge:'ИИ-ассистент лекций',sub:'Загрузите запись — получите транскрипт, формулы, термины и резюме',
     recLabel:'Запись',
@@ -1115,7 +1148,7 @@ var T={
     tabTr:'Транскрипт',tabFo:'Формулы',tabTe:'Термины',tabSu:'Резюме',
     trTitle:'Полный транскрипт',fTitle:'Формулы и уравнения',tTitle:'Технические термины',sTitle:'Ключевые моменты',
     noFormulas:'Формулы не обнаружены',noTerms:'Термины не обнаружены',noSummary:'Резюме недоступно',
-    dark:'Тёмный режим',light:'Светлый режим',large:'📦 Большой файл — будет разделён.',
+    dark:'Тёмный режим',light:'Светлый режим',thLight:'Светлая',thDark:'Тёмная',thSystem:'Системная',large:'📦 Большой файл — будет разделён.',
     today:'Сегодня',month:'Месяц',year:'Год',all:'Всего',install:'Установить приложение',iosHint:'Чтобы установить: нажмите «Поделиться», а затем «На экран „Домой“».'},
   zh:{badge:'AI课堂助手',sub:'上传录音 — 获取文字稿、公式、术语和摘要',
     recLabel:'录音',
@@ -1126,7 +1159,7 @@ var T={
     tabTr:'文字稿',tabFo:'公式',tabTe:'术语',tabSu:'摘要',
     trTitle:'完整文字稿',fTitle:'公式和方程',tTitle:'技术术语',sTitle:'要点',
     noFormulas:'未检测到公式',noTerms:'未检测到术语',noSummary:'暂无摘要',
-    dark:'深色模式',light:'浅色模式',large:'📦 大文件 — 将被分割处理。',
+    dark:'深色模式',light:'浅色模式',thLight:'浅色',thDark:'深色',thSystem:'系统',large:'📦 大文件 — 将被分割处理。',
     today:'今天',month:'本月',year:'本年',all:'总计',install:'安装应用',iosHint:'安装方法：点按“共享”按钮，然后点按“添加到主屏幕”。'},
   ja:{badge:'AI講義アシスタント',sub:'録音をアップロード — 文字起こし、数式、用語、要約を取得',
     recLabel:'録音',
@@ -1137,7 +1170,7 @@ var T={
     tabTr:'文字起こし',tabFo:'数式',tabTe:'用語',tabSu:'要約',
     trTitle:'全文字起こし',fTitle:'数式と方程式',tTitle:'専門用語',sTitle:'重要ポイント',
     noFormulas:'数式が検出されませんでした',noTerms:'用語が検出されませんでした',noSummary:'要約がありません',
-    dark:'ダークモード',light:'ライトモード',large:'📦 大きなファイル — 分割して処理します。',
+    dark:'ダークモード',light:'ライトモード',thLight:'ライト',thDark:'ダーク',thSystem:'システム',large:'📦 大きなファイル — 分割して処理します。',
     today:'今日',month:'今月',year:'今年',all:'合計',install:'アプリを入れる',iosHint:'インストールするには：共有ボタンをタップし、「ホーム画面に追加」を選択してください。'},
   tr:{badge:'Yapay Zeka Ders Asistanı',sub:'Kayıt yükle — transkript, formüller, terimler ve özet al',
     recLabel:'Kayıt',
@@ -1148,7 +1181,7 @@ var T={
     tabTr:'Transkript',tabFo:'Formüller',tabTe:'Terimler',tabSu:'Özet',
     trTitle:'Tam Transkript',fTitle:'Formüller ve Denklemler',tTitle:'Teknik Terimler',sTitle:'Ana Noktalar',
     noFormulas:'Formül tespit edilmedi',noTerms:'Terim tespit edilmedi',noSummary:'Özet mevcut değil',
-    dark:'Karanlık mod',light:'Aydınlık mod',large:'📦 Büyük dosya — parçalara bölünecek.',
+    dark:'Karanlık mod',light:'Aydınlık mod',thLight:'Açık',thDark:'Koyu',thSystem:'Sistem',large:'📦 Büyük dosya — parçalara bölünecek.',
     today:'Bugün',month:'Ay',year:'Yıl',all:'Toplam',install:'Uygulamayı yükle',iosHint:'Yüklemek için: Paylaş düğmesine, ardından «Ana Ekrana Ekle» seçeneğine dokunun.'},
   hi:{badge:'AI लेक्चर असिस्टेंट',sub:'रिकॉर्डिंग अपलोड करें — ट्रांसक्रिप्ट, फॉर्मूले, शब्द और सारांश पाएं',
     recLabel:'रिकॉर्डिंग',
@@ -1159,7 +1192,7 @@ var T={
     tabTr:'ट्रांसक्रिप्ट',tabFo:'फॉर्मूले',tabTe:'शब्द',tabSu:'सारांश',
     trTitle:'पूर्ण ट्रांसक्रिप्ट',fTitle:'फॉर्मूले और समीकरण',tTitle:'तकनीकी शब्द',sTitle:'मुख्य बिंदु',
     noFormulas:'कोई फॉर्मूला नहीं मिला',noTerms:'कोई शब्द नहीं मिला',noSummary:'कोई सारांश उपलब्ध नहीं',
-    dark:'डार्क मोड',light:'लाइट मोड',large:'📦 बड़ी फ़ाइल — टुकड़ों में विभाजित होगी।',
+    dark:'डार्क मोड',light:'लाइट मोड',thLight:'हल्का',thDark:'गहरा',thSystem:'सिस्टम',large:'📦 बड़ी फ़ाइल — टुकड़ों में विभाजित होगी।',
     today:'आज',month:'महीना',year:'साल',all:'कुल',install:'ऐप इंस्टॉल करें',iosHint:'इंस्टॉल करने के लिए: शेयर बटन दबाएँ, फिर «होम स्क्रीन पर जोड़ें» चुनें।'},
   pt:{badge:'Assistente de Aulas com IA',sub:'Envie uma gravação — obtenha transcrição, fórmulas, termos e resumo',
     recLabel:'Gravação',
@@ -1170,7 +1203,7 @@ var T={
     tabTr:'Transcrição',tabFo:'Fórmulas',tabTe:'Termos',tabSu:'Resumo',
     trTitle:'Transcrição completa',fTitle:'Fórmulas e Equações',tTitle:'Termos técnicos',sTitle:'Pontos principais',
     noFormulas:'Nenhuma fórmula detectada',noTerms:'Nenhum termo detectado',noSummary:'Nenhum resumo disponível',
-    dark:'Modo escuro',light:'Modo claro',large:'📦 Arquivo grande — será dividido.',
+    dark:'Modo escuro',light:'Modo claro',thLight:'Claro',thDark:'Escuro',thSystem:'Sistema',large:'📦 Arquivo grande — será dividido.',
     today:'Hoje',month:'Mês',year:'Ano',all:'Total',install:'Instalar o app',iosHint:'Para instalar: toque em Compartilhar e depois em «Adicionar à Tela de Início».'}
 };
 
@@ -1192,16 +1225,13 @@ function setLang(l){
   s('uToday',t.today); s('uInstall',t.install); s('uMonth',t.month); s('uYear',t.year); s('uAll',t.all);
   var go=document.getElementById('go'); if(go)go.textContent=t.analyze;
   var cp=document.getElementById('cpbtn'); if(cp)cp.textContent=t.copy;
-  var isDark=document.body.classList.contains('dark');
-  var tl=document.getElementById('tl'); if(tl)tl.textContent=isDark?t.light:t.dark;
+  var thSel=document.getElementById('themeSel');
+  if(thSel){thSel.options[0].textContent=t.thLight;thSel.options[1].textContent=t.thDark;thSel.options[2].textContent=t.thSystem;}
 }
 
 (function(){
-  var s=localStorage.getItem('t'),isDark=s==='d';
-  document.body.classList.remove('light','dark');
-  document.body.classList.add(isDark?'dark':'light');
-  var tl=document.getElementById('tl');
-  if(tl)tl.textContent=isDark?'Light mode':'Dark mode';
+  applyTheme();
+  if(window.matchMedia){try{window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change',function(){if(themePref()==='s')applyTheme();});}catch(_){}}
   var saved=localStorage.getItem('lang')||'en';
   document.getElementById('langSel').value=saved;
   window.addEventListener('load',function(){setLang(saved);});
@@ -1214,7 +1244,9 @@ function setLang(l){
 })();
 
 (function(){
-  fetch('/stats',{cache:'no-store'}).then(function(r){
+  var _n=new Date(),_p=function(x){return String(x).padStart(2,'0');};
+  var _q='/stats?today='+_n.getFullYear()+'-'+_p(_n.getMonth()+1)+'-'+_p(_n.getDate())+'&month='+_n.getFullYear()+'-'+_p(_n.getMonth()+1)+'&year='+_n.getFullYear()+'&record=1';
+  fetch(_q,{cache:'no-store'}).then(function(r){
     if(!r.ok)throw new Error('Stats error');
     return r.json();
   }).then(function(d){
@@ -1225,13 +1257,22 @@ function setLang(l){
   }).catch(function(){});
 })();
 
-function toggleTheme(){
-  var isDark=document.body.classList.contains('dark');
-  document.body.classList.toggle('dark',!isDark);
-  document.body.classList.toggle('light',isDark);
-  var t=T[curLang]||T.en;
-  document.getElementById('tl').textContent=isDark?t.dark:t.light;
-  localStorage.setItem('t',isDark?'l':'d');
+function themePref(){
+  var v=localStorage.getItem('t');
+  return (v==='l'||v==='d'||v==='s')?v:'s';
+}
+function applyTheme(){
+  var pref=themePref();
+  var dark=pref==='d'||(pref==='s'&&!!(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches));
+  document.body.classList.toggle('dark',dark);
+  document.body.classList.toggle('light',!dark);
+  var sel=document.getElementById('themeSel'); if(sel)sel.value=pref;
+  var ico=document.getElementById('themeIco'); if(ico)ico.textContent=pref==='l'?'☀️':(pref==='d'?'🌙':'🌗');
+  var mc=document.querySelector('meta[name="theme-color"]'); if(mc)mc.setAttribute('content',dark?'#070a16':'#f4f5fb');
+}
+function setTheme(v){
+  localStorage.setItem('t',(v==='l'||v==='d'||v==='s')?v:'s');
+  applyTheme();
 }
 
 var drop=document.getElementById('drop'),fi=document.getElementById('fi');
