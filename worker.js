@@ -271,6 +271,8 @@ No. Recordings are processed to produce the transcript and are not stored or pub
 
 // [guides start] LectureFlow v3.12 — static guide pages (own URLs for search/AI)
 const GUIDE_CSS = `:root{--ac:#6366f1;--ac2:#a855f7;--grad:linear-gradient(135deg,#6366f1,#8b5cf6 55%,#a855f7);--bg:#f4f5fb;--sf:#fff;--bd:#e4e6f2;--tx:#0b1023;--td:#4a5169;--mu:#8a90a8}
+html[data-theme="dark"]{--ac:#818cf8;--bg:#070a16;--sf:#0c1122;--bd:#232a47;--tx:#eef0ff;--td:#aab1cc;--mu:#767e9c}
+html[data-theme="dark"] article{box-shadow:0 18px 44px -22px rgba(0,0,0,.65)}
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--tx);line-height:1.65;padding:26px 16px 60px}
 .wrap{max-width:760px;margin:0 auto}
@@ -326,6 +328,7 @@ function guidePage(g) {
 <meta name="theme-color" content="#6366f1">
 <link rel="icon" href="/icon-192.png">
 <script type="application/ld+json">${ld}</script>
+<script>(function(){try{var t=localStorage.getItem('t');var d=t==='d'||((t===null||t==='s')&&window.matchMedia('(prefers-color-scheme: dark)').matches);if(d){document.documentElement.setAttribute('data-theme','dark');}}catch(e){}})();</script>
 <style>${GUIDE_CSS}</style>
 </head>
 <body>
@@ -544,7 +547,7 @@ export default {
     }
 
     if (request.method === 'GET' && GUIDE_PAGES[url.pathname]) {
-      return new Response(guidePage(GUIDE_PAGES[url.pathname]), { headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'public, max-age=3600' } });
+      return new Response(guidePage(GUIDE_PAGES[url.pathname]), { headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'public, max-age=120' } });
     }
 
     if (request.method === 'GET') return new Response(mainPage(), { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
