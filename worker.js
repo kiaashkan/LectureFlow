@@ -100,9 +100,9 @@ const PWA_MANIFEST = {
     { src: '/icon-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' }
   ]
 };
-const PWA_SW = `const CACHE='lf-pwa-v39';
+const PWA_SW = `const CACHE='lf-pwa-v393';
 const CORE=['/icon-192.png','/icon-512.png','/icon-maskable-512.png','/apple-touch-icon.png'];
-self.addEventListener('install',function(e){e.waitUntil(caches.open(CACHE).then(function(c){return c.addAll(CORE);}).then(function(){return self.skipWaiting();}));});
+self.addEventListener('install',function(e){e.waitUntil(caches.open(CACHE).then(function(c){return c.addAll(CORE).then(function(){return caches.match('/');}).then(function(old){if(old)return c.put('/',old);});}).then(function(){return self.skipWaiting();}));});
 self.addEventListener('activate',function(e){e.waitUntil(caches.keys().then(function(ks){return Promise.all(ks.filter(function(k){return k!==CACHE;}).map(function(k){return caches.delete(k);}));}).then(function(){return self.clients.claim();}));});
 self.addEventListener('fetch',function(e){
   var req=e.request;
@@ -111,7 +111,7 @@ self.addEventListener('fetch',function(e){
   if(url.origin!==self.location.origin)return;
   if(url.pathname==='/process'||url.pathname==='/stats'||url.pathname==='/sw.js'||url.pathname==='/manifest.webmanifest')return;
   if(req.mode==='navigate'){
-    e.respondWith(fetch(req).then(function(res){var copy=res.clone();caches.open(CACHE).then(function(c){c.put('/',copy);});return res;}).catch(function(){return caches.match('/');}));
+    e.respondWith(caches.open(CACHE).then(function(c){return c.match('/').then(function(hit){var net=fetch(req).then(function(res){if(res&&res.ok)c.put('/',res.clone());return res;}).catch(function(){return hit;});return hit||net;});}));
     return;
   }
   if(url.pathname.indexOf('/icon-')===0||url.pathname==='/apple-touch-icon.png'){
