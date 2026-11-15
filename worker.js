@@ -546,6 +546,10 @@ export default {
       return new Response('27a3602eb8241245538754f8236dc95d', { headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'public, max-age=86400' } });
     }
 
+    if (request.method === 'GET' && url.pathname === '/google630f8769faf46d65.html') {
+      return new Response('google-site-verification: google630f8769faf46d65.html', { headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'public, max-age=86400' } });
+    }
+
     if (request.method === 'GET' && GUIDE_PAGES[url.pathname]) {
       return new Response(guidePage(GUIDE_PAGES[url.pathname]), { headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'public, max-age=120' } });
     }
