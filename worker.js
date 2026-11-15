@@ -120,7 +120,7 @@ const PWA_MANIFEST = {
     { src: '/icon-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' }
   ]
 };
-const PWA_SW = `const CACHE='lf-pwa-v312';
+const PWA_SW = `const CACHE='lf-pwa-v3122';
 const CORE=['/icon-192.png','/icon-512.png','/icon-maskable-512.png','/apple-touch-icon.png'];
 self.addEventListener('install',function(e){e.waitUntil(caches.open(CACHE).then(function(c){return c.addAll(CORE).then(function(){return caches.match('/');}).then(function(old){if(old)return c.put('/',old);});}).then(function(){return self.skipWaiting();}));});
 self.addEventListener('activate',function(e){e.waitUntil(caches.keys().then(function(ks){return Promise.all(ks.filter(function(k){return k!==CACHE;}).map(function(k){return caches.delete(k);}));}).then(function(){return self.clients.claim();}));});
@@ -346,7 +346,7 @@ ${g.body}
 </div>
 </article>
 <nav class="more">More guides: <a href="/lecture-transcription">Lecture transcription</a> · <a href="/how-to-transcribe-a-lecture">How to transcribe a lecture</a> · <a href="/voice-to-text-for-students">Voice to text for students</a></nav>
-<footer>LectureFlow — free AI lecture assistant · <a href="/">lf.kiaashkan.workers.dev</a></footer>
+<footer>LectureFlow — free AI lecture assistant · <a href="/">lf.kiaashkan.workers.dev</a> · <a href="https://github.com/kiaashkan">KiA Ashkan on GitHub</a></footer>
 </div>
 </body>
 </html>`;
@@ -894,6 +894,7 @@ return `<!DOCTYPE html>
       "url": "https://lf.kiaashkan.workers.dev/",
       "logo": "https://lf.kiaashkan.workers.dev/icon-512.png",
       "sameAs": [
+        "https://github.com/kiaashkan",
         "https://github.com/kiaashkan/LectureFlow",
         "https://github.com/kiaashkan/LectureFlow-app"
       ]
@@ -1317,6 +1318,7 @@ body.dark .err{background:#3a1620;border-color:#5c2230;color:#fda4af;}
       <tr><td>Sign-up</td><td>Not required</td><td>Usually required</td></tr>
     </table>
     <p style="margin-top:14px">Guides: <a href="/lecture-transcription" style="color:var(--ac);font-weight:600">Lecture transcription</a> · <a href="/how-to-transcribe-a-lecture" style="color:var(--ac);font-weight:600">How to transcribe a lecture</a> · <a href="/voice-to-text-for-students" style="color:var(--ac);font-weight:600">Voice to text for students</a></p>
+    <p style="margin-top:10px">Open source: LectureFlow is built by <a href="https://github.com/kiaashkan" style="color:var(--ac);font-weight:600">KiA Ashkan on GitHub</a> — see the <a href="https://github.com/kiaashkan/LectureFlow" style="color:var(--ac);font-weight:600">LectureFlow source code</a> and the <a href="https://github.com/kiaashkan/LectureFlow-app" style="color:var(--ac);font-weight:600">Android app source</a>.</p>
   </div>
   <div class="sec seo" dir="ltr" style="text-align:left">
     <div class="sec-label">Frequently Asked Questions</div>
