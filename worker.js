@@ -132,6 +132,83 @@ const ASSETLINKS_JSON = JSON.stringify([{
 }]);
 // [assetlinks end]
 
+// [seo start] LectureFlow v3.10 — robots.txt / sitemap.xml / llms.txt, see apply_v310.py
+const ROBOTS_TXT = `User-agent: *
+Allow: /
+
+User-agent: GPTBot
+Allow: /
+
+User-agent: OAI-SearchBot
+Allow: /
+
+User-agent: ChatGPT-User
+Allow: /
+
+User-agent: ClaudeBot
+Allow: /
+
+User-agent: Claude-User
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: Perplexity-User
+Allow: /
+
+User-agent: Google-Extended
+Allow: /
+
+User-agent: Applebot-Extended
+Allow: /
+
+User-agent: CCBot
+Allow: /
+
+User-agent: Meta-ExternalAgent
+Allow: /
+
+User-agent: Bytespider
+Allow: /
+
+Sitemap: https://lf.kiaashkan.workers.dev/sitemap.xml
+`;
+const SITEMAP_XML = `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>https://lf.kiaashkan.workers.dev/</loc>
+    <lastmod>2026-11-15</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>1.0</priority>
+  </url>
+</urlset>
+`;
+const LLMS_TXT = `# LectureFlow
+
+> LectureFlow is a free AI lecture assistant for students. Upload an English lecture recording and get a complete transcript, the formulas the lecturer actually stated, key terms, and a summary — study-ready notes in minutes, with no sign-up.
+
+## What it does
+
+- Transcribes lecture audio (MP3, M4A, WAV, OGG, WebM) with Whisper speech recognition
+- Handles long recordings (an hour or more) and low-quality, far-from-the-professor classroom audio by processing it in chunks
+- Extracts formulas exactly as stated in the transcript — never reconstructed or invented
+- Extracts key terms and writes a concise summary of the lecture
+- Runs entirely in the browser; also installable as a web app (PWA) and available as an Android app
+- Interface in 11 languages; transcription in English
+
+## Who it is for
+
+Students who record lectures and want searchable text, formulas and a summary instead of re-listening to hours of audio.
+
+## Links
+
+- App: https://lf.kiaashkan.workers.dev/
+- Android app (GitHub Releases): https://github.com/kiaashkan/LectureFlow-app/releases
+- Source code: https://github.com/kiaashkan/LectureFlow
+`;
+// [seo end]
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -215,6 +292,18 @@ export default {
 
     if (request.method === 'GET' && url.pathname === '/.well-known/assetlinks.json') {
       return new Response(ASSETLINKS_JSON, { headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'public, max-age=3600' } });
+    }
+
+    if (request.method === 'GET' && url.pathname === '/robots.txt') {
+      return new Response(ROBOTS_TXT, { headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'public, max-age=86400' } });
+    }
+
+    if (request.method === 'GET' && url.pathname === '/sitemap.xml') {
+      return new Response(SITEMAP_XML, { headers: { 'Content-Type': 'application/xml; charset=utf-8', 'Cache-Control': 'public, max-age=86400' } });
+    }
+
+    if (request.method === 'GET' && url.pathname === '/llms.txt') {
+      return new Response(LLMS_TXT, { headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'public, max-age=86400' } });
     }
 
     if (request.method === 'GET') return new Response(mainPage(), { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
@@ -528,8 +617,110 @@ return `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>LectureFlow</title>
-<meta name="description" content="LectureFlow — AI lecture assistant. Upload a lecture recording and get a transcript, formulas, terms and a summary.">
+<title>LectureFlow — AI Lecture Transcription: Transcript, Formulas, Terms &amp; Summary</title>
+<meta name="description" content="LectureFlow is a free AI lecture assistant that turns lecture recordings into a full transcript, extracted formulas, key terms and a summary. Upload an English lecture recording — MP3, M4A, WAV, OGG or WebM — and get study-ready notes in minutes. No sign-up.">
+<meta name="keywords" content="lecture transcription, transcribe lecture recording, AI lecture notes, lecture to text, lecture summarizer, formula extraction, lecture recording to notes, AI lecture assistant">
+<meta name="robots" content="index, follow">
+<meta name="author" content="KiA Ashkan">
+<link rel="canonical" href="https://lf.kiaashkan.workers.dev/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="LectureFlow">
+<meta property="og:title" content="LectureFlow — AI Lecture Transcription">
+<meta property="og:description" content="Upload a lecture recording — get a full transcript, formulas, key terms &amp; summary. Free, right in your browser.">
+<meta property="og:url" content="https://lf.kiaashkan.workers.dev/">
+<meta property="og:image" content="https://lf.kiaashkan.workers.dev/icon-512.png">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="LectureFlow — AI Lecture Transcription">
+<meta name="twitter:description" content="Upload a lecture recording — get a full transcript, formulas, key terms &amp; summary. Free, right in your browser.">
+<meta name="twitter:image" content="https://lf.kiaashkan.workers.dev/icon-512.png">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "WebApplication",
+      "name": "LectureFlow",
+      "url": "https://lf.kiaashkan.workers.dev/",
+      "applicationCategory": "EducationalApplication",
+      "operatingSystem": "Any (web browser)",
+      "browserRequirements": "Requires JavaScript",
+      "description": "Free AI lecture assistant that turns lecture recordings into a full transcript, extracted formulas, key terms and a summary.",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      },
+      "featureList": [
+        "Full lecture transcription with Whisper speech recognition",
+        "Formula extraction from the transcript, exactly as stated",
+        "Key term extraction",
+        "Automatic lecture summary",
+        "Long recordings (an hour or more) processed in chunks",
+        "Installable web app and Android app"
+      ],
+      "author": {
+        "@type": "Person",
+        "name": "KiA Ashkan",
+        "url": "https://github.com/kiaashkan"
+      },
+      "inLanguage": "en"
+    },
+    {
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "What is LectureFlow?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "LectureFlow is a free AI lecture assistant for students. Upload a lecture recording and it returns the complete transcript, plus the formulas, key terms and a summary extracted from the lecture — so you can study instead of re-listening to hours of audio."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "How do I transcribe a lecture recording?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Open LectureFlow, drop your audio file (MP3, M4A, WAV, OGG or WebM) into the upload box and press Process. The recording is transcribed automatically, and the transcript, formulas, terms and summary appear on the same page."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Can LectureFlow handle long or low-quality recordings?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Yes. LectureFlow is built for real student recordings: lectures of an hour or longer, recorded on a phone from the back of the classroom. Long files are split and processed in chunks automatically."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Does LectureFlow extract formulas from lectures?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Yes. Formulas the lecturer actually states are extracted from the transcript and shown as separate cards, exactly as stated — including formulas spoken in words, such as “lambda equals h over p”."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Is LectureFlow free? Do I need an account?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "LectureFlow is free and needs no account or sign-up. It runs in your browser, can be installed as a web app, and is also available as an Android app."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Which languages does LectureFlow support?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Transcription is in English, so upload English-language lectures. The interface is available in 11 languages."
+          }
+        }
+      ]
+    }
+  ]
+}
+<\/script>
 <link rel="manifest" href="/manifest.webmanifest">
 <meta name="theme-color" content="#6366f1">
 <meta name="mobile-web-app-capable" content="yes">
@@ -663,6 +854,12 @@ body.dark .err{background:#3a1620;border-color:#5c2230;color:#fda4af;}
 #fTab,#tTab,#sTab{display:none;}
 @media (max-width:520px){h1{font-size:30px;}.sec,.card{padding:18px;}.grid3{gap:7px;}.tcard{padding:13px 6px;}.tab{font-size:10.5px;}.logo-wrap svg{width:72px;height:72px;}}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;}}
+
+.seo h2{font-size:19px;font-weight:800;margin-bottom:10px;color:var(--tx)}
+.seo h3{font-size:14.5px;font-weight:700;margin:16px 0 6px;color:var(--tx)}
+.seo p,.seo li{font-size:13.5px;line-height:1.65;color:var(--td)}
+.seo ul,.seo ol{padding-left:20px}
+.seo li{margin:4px 0}
 </style>
 </head>
 <body class="light">
@@ -774,6 +971,40 @@ body.dark .err{background:#3a1620;border-color:#5c2230;color:#fda4af;}
     </div></div>
     <div id="tTab"><div class="card"><div class="card-title" id="uTTitle">Technical Terms</div><div class="sbox"><div class="tgrid" id="tlist"></div></div></div></div>
     <div id="sTab"><div class="card"><div class="card-title" id="uSTitle">Key Points</div><div class="sbox" id="slist"></div></div></div>
+  </div>
+
+  <div class="sec seo" dir="ltr" style="text-align:left">
+    <div class="sec-label">About LectureFlow</div>
+    <h2>Turn lecture recordings into study-ready notes</h2>
+    <p>LectureFlow is a free AI lecture assistant. Upload a recording of your class — even a long, far-from-the-professor phone recording — and LectureFlow transcribes it in full, then pulls out what matters for studying: the formulas your lecturer actually stated, the key terms, and a concise summary.</p>
+    <h3>How it works</h3>
+    <ol>
+      <li>Upload your lecture recording (MP3, M4A, WAV, OGG or WebM).</li>
+      <li>Whisper speech recognition transcribes the whole lecture.</li>
+      <li>An AI model reads the transcript and extracts the formulas, key terms and summary.</li>
+    </ol>
+    <h3>Why students use LectureFlow</h3>
+    <ul>
+      <li>Built for real lectures — an hour or longer, recorded from the back of the room.</li>
+      <li>Formulas are extracted exactly as stated in the lecture, never invented or reconstructed.</li>
+      <li>Free, no sign-up, nothing to install — it runs in your browser, as an installable web app, and as an Android app.</li>
+      <li>Interface in 11 languages; transcription in English.</li>
+    </ul>
+  </div>
+  <div class="sec seo" dir="ltr" style="text-align:left">
+    <div class="sec-label">Frequently Asked Questions</div>
+    <h3>What is LectureFlow?</h3>
+    <p>LectureFlow is a free AI lecture assistant for students. Upload a lecture recording and it returns the complete transcript, plus the formulas, key terms and a summary extracted from the lecture — so you can study instead of re-listening to hours of audio.</p>
+    <h3>How do I transcribe a lecture recording?</h3>
+    <p>Open LectureFlow, drop your audio file (MP3, M4A, WAV, OGG or WebM) into the upload box and press Process. The recording is transcribed automatically, and the transcript, formulas, terms and summary appear on the same page.</p>
+    <h3>Can LectureFlow handle long or low-quality recordings?</h3>
+    <p>Yes. LectureFlow is built for real student recordings: lectures of an hour or longer, recorded on a phone from the back of the classroom. Long files are split and processed in chunks automatically.</p>
+    <h3>Does LectureFlow extract formulas from lectures?</h3>
+    <p>Yes. Formulas the lecturer actually states are extracted from the transcript and shown as separate cards, exactly as stated — including formulas spoken in words, such as “lambda equals h over p”.</p>
+    <h3>Is LectureFlow free? Do I need an account?</h3>
+    <p>LectureFlow is free and needs no account or sign-up. It runs in your browser, can be installed as a web app, and is also available as an Android app.</p>
+    <h3>Which languages does LectureFlow support?</h3>
+    <p>Transcription is in English, so upload English-language lectures. The interface is available in 11 languages.</p>
   </div>
 
   <div style="margin-top:32px;border-top:1px solid var(--bd);padding-top:20px;">
