@@ -121,6 +121,17 @@ self.addEventListener('fetch',function(e){
 `;
 // [pwa end]
 
+// [assetlinks start] LectureFlow v3.9.2 — Digital Asset Links (TWA), see apply_v392.py
+const ASSETLINKS_JSON = JSON.stringify([{
+  relation: ['delegate_permission/common.handle_all_urls'],
+  target: {
+    namespace: 'android_app',
+    package_name: 'ir.kiaashkan.lectureflow',
+    sha256_cert_fingerprints: ['CD:CF:5E:C4:01:1E:15:88:BC:3A:16:17:F4:D1:15:89:D3:79:3F:E1:C8:1B:85:DC:ED:A9:1F:42:9B:B5:9E:3A']
+  }
+}]);
+// [assetlinks end]
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -200,6 +211,10 @@ export default {
 
     if (request.method === 'GET' && PWA_ICONS[url.pathname]) {
       return pwaIconResponse(PWA_ICONS[url.pathname]);
+    }
+
+    if (request.method === 'GET' && url.pathname === '/.well-known/assetlinks.json') {
+      return new Response(ASSETLINKS_JSON, { headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'public, max-age=3600' } });
     }
 
     if (request.method === 'GET') return new Response(mainPage(), { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
