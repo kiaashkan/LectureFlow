@@ -663,9 +663,20 @@ body.dark .err{background:#3a1620;border-color:#5c2230;color:#fda4af;}
 #fTab,#tTab,#sTab{display:none;}
 @media (max-width:520px){h1{font-size:30px;}.sec,.card{padding:18px;}.grid3{gap:7px;}.tcard{padding:13px 6px;}.tab{font-size:10.5px;}.logo-wrap svg{width:72px;height:72px;}}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;}}
+
+#splash{display:none}
+@media (display-mode:standalone){
+#splash{display:flex;position:fixed;inset:0;z-index:9999;flex-direction:column;align-items:center;justify-content:center;gap:18px;background:radial-gradient(640px 320px at 12% -6%,rgba(99,102,241,.16),transparent 62%),radial-gradient(720px 360px at 92% -2%,rgba(168,85,247,.12),transparent 62%),radial-gradient(900px 520px at 50% 118%,rgba(6,182,212,.09),transparent 62%),var(--bg);transition:opacity .35s ease,visibility .35s;animation:lfSplashSafety .8s ease 6s forwards}
+#splash svg{width:96px;height:96px;filter:drop-shadow(0 14px 28px rgba(99,102,241,.35));animation:lfSplashPulse 1.6s ease-in-out infinite}
+#splash .lf-splash-name{font-size:23px;font-weight:800;letter-spacing:.2px;color:var(--tx)}
+#splash.hide{opacity:0;visibility:hidden}
+}
+@keyframes lfSplashPulse{0%,100%{transform:scale(1)}50%{transform:scale(1.055)}}
+@keyframes lfSplashSafety{to{opacity:0;visibility:hidden}}
 </style>
 </head>
 <body class="light">
+<div id="splash" aria-hidden="true"><svg width="72" height="72" viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg"><rect width="80" height="80" rx="22" fill="#f8fafc"/><rect width="80" height="80" rx="22" fill="none" stroke="#e2e8f0" stroke-width="1.5"/><rect x="8"  y="44" width="10" height="20" rx="4" fill="#94a3b8"/><rect x="22" y="32" width="10" height="32" rx="4" fill="#64748b"/><rect x="36" y="16" width="10" height="48" rx="4" fill="#6366f1"/><rect x="50" y="24" width="10" height="40" rx="4" fill="#a855f7"/><rect x="64" y="36" width="10" height="28" rx="4" fill="#64748b"/></svg><div class="lf-splash-name">LectureFlow</div></div>
 <div class="wrap">
   <div class="topbar">
     <select class="lang-sel" id="langSel" onchange="setLang(this.value)">
@@ -1278,6 +1289,7 @@ function installApp(){
   alert(t.iosHint||'To install: tap the Share button, then Add to Home Screen');
 }
 (function(){if(_isIOS()&&!_isStandalone()){var b=document.getElementById('installBtn');if(b)b.style.display='flex';}})();
+(function(){function hideSplash(){var s=document.getElementById('splash');if(!s)return;s.classList.add('hide');setTimeout(function(){if(s.parentNode)s.parentNode.removeChild(s);},450);}if(document.readyState==='complete'){hideSplash();}else{window.addEventListener('load',hideSplash);}})();
 <\/script>
 </body>
 </html>`;}
