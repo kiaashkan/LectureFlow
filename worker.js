@@ -242,6 +242,10 @@ Verbal-to-notation guidance:
 - "clearance" -> CL = Dose/AUC
 - "bioavailability" -> F = (AUC_oral/AUC_iv) \u00d7 100%
 - "henderson hasselbalch" -> pH = pKa + log([A\u207b]/[HA])
+Chemical equation rules (type "chemical"):
+- Every chemical equation MUST be atom-balanced: the count of each element must be identical on both sides of the arrow. Count the atoms and verify before answering (balanced: 2Al + AlCl\u2083 \u2192 3AlCl; NOT balanced: Al + AlCl\u2083 \u2192 3AlCl).
+- If the lecture describes a reaction and its reverse as separate steps, keep both, but use the same coefficients in both directions.
+- Write element counts as subscript digits (AlCl\u2083, Ni(CO)\u2084, CO\u2082) and coefficients as plain digits (2Al, 4CO).
 For each formula, include its name, one type from statistical|mathematical|chemical|pharmacological|other, and an exact supporting transcript quote of at most 20 words.`;
 
           if (!opts.formulas && !opts.terms && !opts.summary) {
@@ -360,6 +364,79 @@ ${part}
             throw lastError || new Error(`Analysis failed in section ${partNumber}`);
           };
 
+          // [balance-fix start] Deterministic chemical-equation balancer.
+          // Repairs wrong/missing coefficients in extracted chemical equations;
+          // anything unparsable or unbalanceable is returned unchanged.
+          const SUB_MAP = {'\u2080':'0','\u2081':'1','\u2082':'2','\u2083':'3','\u2084':'4','\u2085':'5','\u2086':'6','\u2087':'7','\u2088':'8','\u2089':'9'};
+          const SUP_MAP = {'0':'\u2080','1':'\u2081','2':'\u2082','3':'\u2083','4':'\u2084','5':'\u2085','6':'\u2086','7':'\u2087','8':'\u2088','9':'\u2089'};
+          const parseFormulaCounts = (body) => {
+            let i = 0;
+            const readNum = () => { let n = ''; while (i < body.length && body[i] >= '0' && body[i] <= '9') n += body[i++]; return n ? parseInt(n, 10) : 1; };
+            const parseSeq = (stopAtParen) => {
+              const counts = {};
+              while (i < body.length) {
+                const ch = body[i];
+                if (ch === ')') { if (stopAtParen) return counts; return null; }
+                if (ch === '(') { i++; const inner = parseSeq(true); if (!inner || body[i] !== ')') return null; i++; const m = readNum(); for (const k in inner) counts[k] = (counts[k] || 0) + inner[k] * m; continue; }
+                if (ch >= 'A' && ch <= 'Z') { let el = ch; i++; if (i < body.length && body[i] >= 'a' && body[i] <= 'z') el += body[i++]; const n = readNum(); counts[el] = (counts[el] || 0) + n; continue; }
+                return null;
+              }
+              return stopAtParen ? null : counts;
+            };
+            const out = parseSeq(false);
+            return (out && i === body.length && Object.keys(out).length) ? out : null;
+          };
+          const fixChemicalEquation = (raw) => {
+            try {
+              if (typeof raw !== 'string' || !raw.includes('\u2192')) return raw;
+              const plain = raw.replace(/[\u2080-\u2089]/g, (c) => SUB_MAP[c]).replace(/\s+/g, ' ').trim();
+              const sides = plain.split('\u2192');
+              if (sides.length !== 2) return raw;
+              const parseSide = (side) => {
+                const terms = [];
+                for (const piece of side.split('+')) {
+                  const t = piece.trim();
+                  const m = t.match(/^(\d*)\s*([A-Za-z(][A-Za-z0-9()]*)$/);
+                  if (!m) return null;
+                  const counts = parseFormulaCounts(m[2]);
+                  if (!counts) return null;
+                  terms.push({ coeff: m[1] ? parseInt(m[1], 10) : 1, body: m[2], counts });
+                }
+                return terms.length ? terms : null;
+              };
+              const L = parseSide(sides[0]), R = parseSide(sides[1]);
+              if (!L || !R) return raw;
+              const terms = [...L, ...R];
+              if (terms.length > 5) return raw;
+              const elements = [...new Set(terms.flatMap((t) => Object.keys(t.counts)))];
+              const sideEls = (arr) => new Set(arr.flatMap((t) => Object.keys(t.counts)));
+              const elsL = sideEls(L), elsR = sideEls(R);
+              if (elements.some((e) => !elsL.has(e) || !elsR.has(e))) return raw;
+              const balancedWith = (coeffs) => elements.every((e) => {
+                let a = 0, b = 0;
+                L.forEach((t, j) => { a += coeffs[j] * (t.counts[e] || 0); });
+                R.forEach((t, j) => { b += coeffs[L.length + j] * (t.counts[e] || 0); });
+                return a === b;
+              });
+              let solution = null;
+              const current = terms.map((t) => t.coeff);
+              if (balancedWith(current)) return raw;
+              const n = terms.length;
+              const search = (idx, remaining, acc) => {
+                if (solution) return;
+                if (idx === n - 1) { if (remaining >= 1 && remaining <= 8) { acc.push(remaining); if (balancedWith(acc)) solution = [...acc]; acc.pop(); } return; }
+                for (let v = 1; v <= Math.min(8, remaining - (n - idx - 1)); v++) { acc.push(v); search(idx + 1, remaining - v, acc); acc.pop(); if (solution) return; }
+              };
+              for (let sum = n; sum <= n * 8 && !solution; sum++) search(0, sum, []);
+              if (!solution) return raw;
+              const render = (t, c) => (c > 1 ? String(c) : '') + t.body.replace(/\d/g, (d) => SUP_MAP[d]);
+              const left = L.map((t, j) => render(t, solution[j])).join(' + ');
+              const right = R.map((t, j) => render(t, solution[L.length + j])).join(' + ');
+              return left + ' \u2192 ' + right;
+            } catch (_) { return raw; }
+          };
+          // [balance-fix end]
+
           const analyses = [];
           for (let i = 0; i < textParts.length; i++) {
             analyses.push(...await requestPart(textParts[i], i + 1));
@@ -375,6 +452,7 @@ ${part}
             for (const formulaRaw of analysis.formulas) {
               const formula = typeof formulaRaw === 'string' ? { formula: formulaRaw, name: '', type: 'other' } : formulaRaw;
               if (!formula || typeof formula !== 'object' || !formula.formula) continue;
+              if (typeof formula.formula === 'string') formula.formula = fixChemicalEquation(formula.formula);
               const key = String(formula.formula).toLowerCase().replace(/[\s*()\[\]{}'"`\u00b1\u00b7\u00d7\u221a^_]/g, '').slice(0, 80);
               if (!formulaKeys.has(key)) { formulaKeys.add(key); formulas.push(formula); }
             }
