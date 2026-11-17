@@ -6,20 +6,14 @@
 * 🇮🇷 [فارسی](https://github.com/kiaashkan/LectureFlow/blob/main/README-FA.md)
 
 
-AI-powered speech-to-text and lecture analysis platform.
+AI-powered speech-to-text for lectures.
 
-Upload a lecture recording and automatically generate:
+Upload a lecture recording and get the **full transcript** — nothing more, nothing less. LectureFlow does one job and does it well: turning lecture audio into accurate text.
 
-* Transcript
-* Technical terms
-* Formula extraction
-* AI-generated summaries
-
-Built for students, researchers, educators, and anyone who needs AI-powered lecture or speech analysis. LectureFlow is designed for real classroom recordings: long files (an hour or more), recorded from the back of the room, with all the noise that comes with that.
+Built for students, researchers, educators, and anyone who needs a lecture as text. LectureFlow is designed for real classroom recordings: long files (an hour or more), recorded from the back of the room, with all the noise that comes with that.
 
 ![LectureFlow](https://img.shields.io/badge/Cloudflare-Workers-F38020?style=flat&logo=cloudflare)
 ![Groq](https://img.shields.io/badge/Groq-Whisper-orange?style=flat)
-![NVIDIA](https://img.shields.io/badge/NVIDIA-NIM-76B900?style=flat)
 
 🔗 **Live Demo:** [lf.kiaashkan.workers.dev](https://lf.kiaashkan.workers.dev)
 
@@ -35,10 +29,7 @@ https://github.com/kiaashkan/LectureFlow-app
   * ⚡ **Whisper Large v3 Turbo** — faster, slightly less accurate
 * 🗣 **English transcription** — voice-to-text is in English; the interface itself is available in 11 languages
 * ⏱ **Long recordings** — files are automatically split into chunks in the browser, so hour-long lectures are no problem
-* 🧪 **Formula extraction & validation** — detects and validates spoken formulas from lectures
-* 💊 **Technical terms extraction** — identifies important terminology
-* 📋 **AI Summary** — generates concise lecture summaries
-* 🧠 **Accuracy-first lecture analysis** — MiniMax M3.1 Flash via NVIDIA NIM, with automatic fallbacks (see Architecture)
+* 📋 **Copy & download** — copy the transcript, or download it as a `.txt` file or PDF
 * 📱 **Android app available** — open-source Android client
 * 🌙 **Dark / Light mode**
 * 📱 **Mobile friendly**
@@ -52,27 +43,14 @@ https://github.com/kiaashkan/LectureFlow-app
 Audio Recording
       │
       ▼
+Browser: convert to 16 kHz WAV and split into chunks
+      │
+      ▼
 Groq Whisper (Large v3 or Turbo — your choice)
 (Speech-to-Text, English)
       │
       ▼
-Transcript
-      │
-      ▼
-Lecture analysis — accuracy-first provider chain:
-  1. MiniMax M3.1 Flash (NVIDIA NIM)
-  2. GLM-5.3 Flash (NVIDIA NIM)        ← if #1 fails
-  3. Workers AI · Llama 3.3 70B        ← if #2 fails
-(Formula, terms & summary analysis)
-      │
-      ▼
-┌─────────────────────────┐
-│   Final Results         │
-├─────────────────────────┤
-│ • Formula Validation    │
-│ • Technical Terms       │
-│ • AI Summary            │
-└─────────────────────────┘
+Full Transcript — copy it, or download .txt / PDF
 ```
 ## Android App
 
@@ -91,15 +69,13 @@ Build it yourself, customize it, or connect it to your own deployment.
 | Service            | Usage                              | Free Tier |
 | ------------------ | ---------------------------------- | --------- |
 | Groq               | Audio transcription (Whisper Large v3 / Turbo) | ✅ Free    |
-| NVIDIA NIM         | Formula, terms & summary analysis (MiniMax M3.1 Flash, GLM-5.3 Flash) | Free endpoint* |
-| Cloudflare Workers AI | Analysis fallback (Llama 3.3 70B) | ✅ Free    |
 | Cloudflare Workers | Hosting & backend                  | ✅ Free    |
 
 ---
 
 ## Setup
 
-### 1. Get API Keys
+### 1. Get an API Key
 
 #### Groq (Transcription)
 
@@ -108,14 +84,6 @@ Build it yourself, customize it, or connect it to your own deployment.
 3. Open API Keys
 4. Create a new API key
 5. Copy your key (`gsk_...`)
-
-#### NVIDIA NIM (Lecture Analysis — MiniMax M3.1 Flash / GLM-5.3 Flash)
-
-1. Go to https://build.nvidia.com
-2. Create an account
-3. Open API Keys
-4. Generate a key
-5. Copy your key (`nvapi-...`)
 
 ---
 
@@ -136,24 +104,20 @@ Go to:
 
 Settings → Variables and Secrets
 
-Create the following secrets:
+Create the following secret:
 
 | Name           | Value     |
 | -------------- | --------- |
 | GROQ_API_KEY   | gsk_...   |
-| NVIDIA_API_KEY | nvapi-... |
 
-Optional bindings (used for the analysis fallback and the view counters):
+Optional bindings (used for the view counters):
 
 | Binding   | Type             | Name       |
 | --------- | ---------------- | ---------- |
-| AI        | Workers AI       | —          |
 | DB        | D1 database      | lecture-db |
 | ANALYTICS | Analytics Engine | page_views |
 
 Deploy again after saving.
-
-* NVIDIA free endpoint availability and limits may change.
 
 ---
 
@@ -165,7 +129,7 @@ Open your Worker URL:
 https://your-worker.workers.dev
 ```
 
-Upload an audio file and let LectureFlow analyze it automatically.
+Upload an audio file and let LectureFlow transcribe it automatically.
 
 ---
 
