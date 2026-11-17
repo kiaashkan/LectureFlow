@@ -120,7 +120,7 @@ const PWA_MANIFEST = {
     { src: '/icon-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' }
   ]
 };
-const PWA_SW = `const CACHE='lf-pwa-v3161';
+const PWA_SW = `const CACHE='lf-pwa-v317';
 const CORE=['/icon-192.png','/icon-512.png','/icon-maskable-512.png','/apple-touch-icon.png'];
 self.addEventListener('install',function(e){e.waitUntil(caches.open(CACHE).then(function(c){return c.addAll(CORE).then(function(){return caches.match('/');}).then(function(old){if(old)return c.put('/',old);});}).then(function(){return self.skipWaiting();}));});
 self.addEventListener('activate',function(e){e.waitUntil(caches.keys().then(function(ks){return Promise.all(ks.filter(function(k){return k!==CACHE;}).map(function(k){return caches.delete(k);}));}).then(function(){return self.clients.claim();}));});
@@ -849,7 +849,7 @@ export default {
             'z-ai/glm-5.3-flash'
           ];
           const NVIDIA_TIMEOUT_MS = 45000;
-          const NVIDIA_MAX_TOKENS = 4096;
+          const NVIDIA_MAX_TOKENS = 8192;
           // Workers AI fallback (binding AI is already connected in the dashboard).
           const FALLBACK_MODEL = '@cf/meta/llama-3.3-70b-instruct-fp8-fast';
           // Circuit breaker for this request: a provider that times out or
@@ -859,13 +859,21 @@ export default {
           // Hard time budget for the whole analysis (KiA, 2026-11-16):
           // when it runs out, return what we have — the user always gets
           // the transcript instead of an endless spinner.
-          const ANALYSIS_DEADLINE_MS = 150000;
-          const AI_TIMEOUT_MS = 30000;
+          const ANALYSIS_DEADLINE_MS = 240000;
+          const AI_TIMEOUT_MS = 60000;
           const analysisStartedAt = Date.now();
           const analysisTimeLeft = () => ANALYSIS_DEADLINE_MS - (Date.now() - analysisStartedAt);
 
           const parseAnalysis = (raw) => {
-            const analysis = safeJson(typeof raw === 'string' ? raw : '{}', {});
+            let analysis = safeJson(typeof raw === 'string' ? raw : '{}', {});
+            // Some models nest the answer one level down
+            // ({"analysis": {...}}, {"result": {...}}, ...). Dig once.
+            const hasKeys = (o) => !!o && typeof o === 'object' && (Array.isArray(o.formulas) || Array.isArray(o.terms) || Array.isArray(o.points));
+            if (analysis && typeof analysis === 'object' && !Array.isArray(analysis) && !hasKeys(analysis)) {
+              const nested = ['analysis', 'result', 'data', 'output'].map((k) => analysis[k]).find(hasKeys)
+                || Object.values(analysis).find(hasKeys);
+              if (nested) analysis = nested;
+            }
             return [{
               formulas: Array.isArray(analysis.formulas) ? analysis.formulas : [],
               terms: Array.isArray(analysis.terms) ? analysis.terms : [],
@@ -898,17 +906,51 @@ export default {
             }
           };
 
+          // Second provider family: Groq's LLM API. Same account key as
+          // Whisper, but a different quota (LLM tokens, not audio
+          // seconds) — and fast enough that a section takes seconds,
+          // not a 45 s timeout, when NVIDIA's free tier is throttled.
+          const GROQ_LLM_MODEL = 'llama-3.3-70b-versatile';
+          const GROQ_TIMEOUT_MS = 60000;
+          const callGroqLLM = async (part, partNumber, promptOverride) => {
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), GROQ_TIMEOUT_MS);
+            try {
+              const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${env.GROQ_API_KEY}`, 'Content-Type': 'application/json' },
+                signal: controller.signal,
+                body: JSON.stringify({
+                  model: GROQ_LLM_MODEL,
+                  messages: [{ role: 'user', content: promptOverride || makePrompt(part, partNumber) }],
+                  temperature: 0.1,
+                  max_tokens: 4096,
+                  response_format: { type: 'json_object' }
+                })
+              });
+              const responseText = await response.text();
+              return { response, responseText };
+            } finally {
+              clearTimeout(timer);
+            }
+          };
+
           const callWorkersAI = async (part, partNumber, promptOverride) => {
             if (!env.AI) throw new Error('Workers AI binding (AI) is not connected');
             const out = await Promise.race([
               env.AI.run(FALLBACK_MODEL, {
                 messages: [{ role: 'user', content: promptOverride || makePrompt(part, partNumber) }],
                 temperature: 0.1,
-                max_tokens: NVIDIA_MAX_TOKENS
+                max_tokens: 4096
               }),
               new Promise((_, reject) => setTimeout(() => reject(new Error('Workers AI timeout')), AI_TIMEOUT_MS))
             ]);
-            return typeof out === 'string' ? out : (out && out.response) || '';
+            if (typeof out === 'string') return out;
+            if (out && typeof out.response === 'string') return out.response;
+            if (out && typeof out.result === 'string') return out.result;
+            if (out && out.response != null) return JSON.stringify(out.response);
+            if (out && out.result != null) return JSON.stringify(out.result);
+            return '';
           };
 
           const FORMULA_INSTRUCTIONS = `Extract ONLY formulas and equations that the speaker actually states as a formula in the transcript: dictated, read aloud, or given as an equation, including formulas spoken in words (for example "lambda equals h over p"). If the speaker only describes a process, reaction, or relationship in prose without stating its equation, do NOT turn that description into a formula. Never reconstruct, infer, complete, balance, or correct a formula. A substance or species name mentioned on its own (for example "aluminum trichloride" or "carbon monoxide") is a technical term, not a formula. Reproduce each formula exactly as stated. The transcript may already contain formulas written in notation (for example AlCl3, Ni(CO)4, 2Al + AlCl3 \u2192 3AlCl); extract those exactly as written.
@@ -1013,6 +1055,29 @@ ${part}
               // Fall through to the next model / fallback.
             }
 
+            // Second leg: Groq LLM — independent quota, fast.
+            if (!providerDown.has(GROQ_LLM_MODEL)) {
+              try {
+                const g = await callGroqLLM(part, partNumber);
+                if (g.response && g.response.ok) {
+                  const payload = safeJson(g.responseText, {});
+                  const msg = payload.choices?.[0]?.message || {};
+                  const parsed = parseAnalysis(msg.content || msg.reasoning_content || '{}');
+                  if (!isEmptyResult(parsed)) return { results: parsed, failed: false };
+                  // Healthy-but-empty: soft failure, fall through.
+                  lastError = new Error(`Empty analysis from Groq LLM in section ${partNumber}`);
+                } else {
+                  providerDown.add(GROQ_LLM_MODEL);
+                  sick = true;
+                  lastError = new Error(`Groq LLM error in section ${partNumber} (${g.response ? g.response.status : 'no response'})`);
+                }
+              } catch (_) {
+                providerDown.add(GROQ_LLM_MODEL);
+                sick = true;
+                lastError = new Error(`Groq LLM timeout in section ${partNumber} (no response within ${GROQ_TIMEOUT_MS / 1000}s)`);
+              }
+            }
+
             // Last resort: Workers AI fallback, so the user still gets a result.
             try {
               const raw = await callWorkersAI(part, partNumber);
@@ -1080,6 +1145,19 @@ ${part}
                   }
                 } catch (_) { /* try the next provider */ }
               }
+              // A "{}" answer is not a rescue — keep trying other providers.
+              if (rescuedRaw) { const rp = safeJson(rescuedRaw, {}); const rt = Array.isArray(rp.terms) ? rp.terms : (Array.isArray(rp) ? rp : []); if (!rt.length) rescuedRaw = ''; }
+              if (!rescuedRaw && analysisTimeLeft() > 0 && !providerDown.has(GROQ_LLM_MODEL)) {
+                try {
+                  const r = await callGroqLLM(text.slice(0, 7000), 1, rescuePrompt);
+                  if (r.response && r.response.ok) {
+                    const payload = safeJson(r.responseText, {});
+                    const msg = payload.choices?.[0]?.message || {};
+                    rescuedRaw = msg.content || msg.reasoning_content || '';
+                  }
+                } catch (_) { /* try the next provider */ }
+              }
+              if (rescuedRaw) { const rp = safeJson(rescuedRaw, {}); const rt = Array.isArray(rp.terms) ? rp.terms : (Array.isArray(rp) ? rp : []); if (!rt.length) rescuedRaw = ''; }
               if (!rescuedRaw && analysisTimeLeft() > 0) {
                 try { rescuedRaw = await callWorkersAI(text.slice(0, 7000), 1, rescuePrompt); } catch (_) {}
               }
@@ -1875,7 +1953,7 @@ async function run(){
     fd.append('opts',JSON.stringify(opts));
     var analysisFailed=false;
     var ac=new AbortController();
-    var acTimer=setTimeout(function(){ac.abort();},180000);
+    var acTimer=setTimeout(function(){ac.abort();},270000);
     try{
       var r=await fetch('/process',{method:'POST',body:fd,signal:ac.signal});
       var j=await r.text();
@@ -2011,7 +2089,7 @@ async function extractFormulas(){
   var old=btn.textContent;
   btn.textContent=t.exfing;
   var ac=new AbortController();
-  var tm=setTimeout(function(){ac.abort();},180000);
+  var tm=setTimeout(function(){ac.abort();},270000);
   try{
     var fd=new FormData();
     fd.append('action','analyze');fd.append('text',rData.transcript);
