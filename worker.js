@@ -120,7 +120,7 @@ const PWA_MANIFEST = {
     { src: '/icon-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' }
   ]
 };
-const PWA_SW = `const CACHE='lf-pwa-v314';
+const PWA_SW = `const CACHE='lf-pwa-v316';
 const CORE=['/icon-192.png','/icon-512.png','/icon-maskable-512.png','/apple-touch-icon.png'];
 self.addEventListener('install',function(e){e.waitUntil(caches.open(CACHE).then(function(c){return c.addAll(CORE).then(function(){return caches.match('/');}).then(function(old){if(old)return c.put('/',old);});}).then(function(){return self.skipWaiting();}));});
 self.addEventListener('activate',function(e){e.waitUntil(caches.keys().then(function(ks){return Promise.all(ks.filter(function(k){return k!==CACHE;}).map(function(k){return caches.delete(k);}));}).then(function(){return self.clients.claim();}));});
@@ -852,6 +852,17 @@ export default {
           const NVIDIA_MAX_TOKENS = 4096;
           // Workers AI fallback (binding AI is already connected in the dashboard).
           const FALLBACK_MODEL = '@cf/meta/llama-3.3-70b-instruct-fp8-fast';
+          // Circuit breaker for this request: a provider that times out or
+          // answers 524/504/429/5xx is sick — later sections must not pay
+          // its timeout again (that multiplication was the multi-minute stall).
+          const providerDown = new Set();
+          // Hard time budget for the whole analysis (KiA, 2026-11-16):
+          // when it runs out, return what we have — the user always gets
+          // the transcript instead of an endless spinner.
+          const ANALYSIS_DEADLINE_MS = 150000;
+          const AI_TIMEOUT_MS = 30000;
+          const analysisStartedAt = Date.now();
+          const analysisTimeLeft = () => ANALYSIS_DEADLINE_MS - (Date.now() - analysisStartedAt);
 
           const parseAnalysis = (raw) => {
             const analysis = safeJson(typeof raw === 'string' ? raw : '{}', {});
@@ -889,11 +900,14 @@ export default {
 
           const callWorkersAI = async (part, partNumber, promptOverride) => {
             if (!env.AI) throw new Error('Workers AI binding (AI) is not connected');
-            const out = await env.AI.run(FALLBACK_MODEL, {
-              messages: [{ role: 'user', content: promptOverride || makePrompt(part, partNumber) }],
-              temperature: 0.1,
-              max_tokens: NVIDIA_MAX_TOKENS
-            });
+            const out = await Promise.race([
+              env.AI.run(FALLBACK_MODEL, {
+                messages: [{ role: 'user', content: promptOverride || makePrompt(part, partNumber) }],
+                temperature: 0.1,
+                max_tokens: NVIDIA_MAX_TOKENS
+              }),
+              new Promise((_, reject) => setTimeout(() => reject(new Error('Workers AI timeout')), AI_TIMEOUT_MS))
+            ]);
             return typeof out === 'string' ? out : (out && out.response) || '';
           };
 
@@ -965,23 +979,12 @@ TRANSCRIPT SECTION:
 ${part}
 """`;
 
-          const splitTimedOutPart = (part) => {
-            let cut = Math.floor(part.length / 2);
-            const minBreak = Math.floor(part.length * 0.3);
-            const paragraph = part.lastIndexOf('\n\n', cut);
-            const sentence = part.lastIndexOf('. ', cut);
-            const word = part.lastIndexOf(' ', cut);
-            if (paragraph >= minBreak) cut = paragraph + 2;
-            else if (sentence >= minBreak) cut = sentence + 1;
-            else if (word >= minBreak) cut = word + 1;
-            const overlap = 250;
-            return [part.slice(0, Math.min(part.length, cut + overlap)).trim(), part.slice(Math.max(0, cut - overlap)).trim()];
-          };
-
-          const requestPart = async (part, partNumber, depth = 0) => {
+          const requestPart = async (part, partNumber) => {
             let lastError = null;
+            let sick = false;
 
             for (const model of NVIDIA_MODELS) {
+              if (providerDown.has(model)) continue;
               let response = null;
               let responseText = '';
               let timedOut = false;
@@ -995,42 +998,43 @@ ${part}
                 const payload = safeJson(responseText, {});
                 const msg = payload.choices?.[0]?.message || {};
                 const parsed = parseAnalysis(msg.content || msg.reasoning_content || '{}');
-                if (!isEmptyResult(parsed)) return parsed;
-                // An empty analysis from a healthy response is a soft failure: try the next provider.
+                if (!isEmptyResult(parsed)) return { results: parsed, failed: false };
+                // A healthy-but-empty analysis is a soft failure: try the next provider.
                 lastError = new Error(`Empty analysis from ${model} in section ${partNumber}`);
                 continue;
               }
 
-              const retryable = timedOut || (response && (response.status === 524 || response.status === 504 || response.status === 429 || response.status >= 500));
-              if (retryable && depth < 2 && part.length > 1400) {
-                // Split the section and retry sequentially: parallel retries overload the free endpoint.
-                const [left, right] = splitTimedOutPart(part);
-                const leftResults = await requestPart(left, partNumber, depth + 1);
-                const rightResults = await requestPart(right, partNumber, depth + 1);
-                return leftResults.concat(rightResults);
-              }
-
+              // Sick provider: mark it down for the rest of this request.
+              providerDown.add(model);
+              sick = true;
               lastError = timedOut
                 ? new Error(`NVIDIA timeout in section ${partNumber} (no response within ${NVIDIA_TIMEOUT_MS / 1000}s)`)
-                : new Error(`NVIDIA error in section ${partNumber} (${response ? response.status : 'no response'}): ${responseText}`);
-              // Non-retryable or exhausted: fall through to the next model / fallback.
+                : new Error(`NVIDIA error in section ${partNumber} (${response ? response.status : 'no response'})`);
+              // Fall through to the next model / fallback.
             }
 
             // Last resort: Workers AI fallback, so the user still gets a result.
             try {
               const raw = await callWorkersAI(part, partNumber);
               const parsed = parseAnalysis(raw);
-              if (!isEmptyResult(parsed)) return parsed;
-              if (!lastError) return parsed; // every provider answered but found nothing
+              if (!isEmptyResult(parsed)) return { results: parsed, failed: false };
+              if (!lastError) return { results: parsed, failed: false }; // every provider answered but found nothing
             } catch (e) {
+              sick = true;
               if (!lastError) lastError = e;
             }
-            throw lastError || new Error(`Analysis failed in section ${partNumber}`);
+            // This section could not be analyzed: degrade, never destroy the job.
+            // The transcript is the product; formulas/terms/points are best-effort.
+            return { results: [{ formulas: [], terms: [], points: [] }], failed: sick };
           };
 
           const analyses = [];
+          let failedSections = 0;
           for (let i = 0; i < textParts.length; i++) {
-            analyses.push(...await requestPart(textParts[i], i + 1));
+            if (analysisTimeLeft() <= 0) { failedSections += textParts.length - i; break; }
+            const partOutcome = await requestPart(textParts[i], i + 1);
+            if (partOutcome.failed) failedSections++;
+            analyses.push(...partOutcome.results);
           }
 
           const formulas = [];
@@ -1060,11 +1064,12 @@ ${part}
 
           // Terms rescue: if the main analysis produced no terms although they were
           // requested, ask once more with a short terms-only prompt.
-          if (opts.terms && terms.length === 0 && text.trim().length > 30) {
+          if (opts.terms && terms.length === 0 && text.trim().length > 30 && analysisTimeLeft() > 0) {
             try {
               const rescuePrompt = `Extract 10-20 important technical terms from this university lecture transcript. Return ONLY valid JSON in exactly this shape: {"terms":[{"term":"..."}]}. Prefer specific subject terms over generic words. Do not invent terms.\nTRANSCRIPT:\n\"\"\"\n${text.slice(0, 7000)}\n\"\"\"`;
               let rescuedRaw = '';
               for (const model of NVIDIA_MODELS) {
+                if (providerDown.has(model) || analysisTimeLeft() <= 0) continue;
                 try {
                   const r = await callNvidia(text.slice(0, 7000), 1, model, rescuePrompt);
                   if (r.response && r.response.ok) {
@@ -1075,7 +1080,7 @@ ${part}
                   }
                 } catch (_) { /* try the next provider */ }
               }
-              if (!rescuedRaw) {
+              if (!rescuedRaw && analysisTimeLeft() > 0) {
                 try { rescuedRaw = await callWorkersAI(text.slice(0, 7000), 1, rescuePrompt); } catch (_) {}
               }
               const rescued = safeJson(rescuedRaw || '{}', {});
@@ -1100,6 +1105,8 @@ ${part}
             formulas: opts.formulas ? formulas : [],
             terms:    opts.terms    ? selectedTerms : [],
             points:   opts.summary  ? selectedPoints : [],
+            partial: failedSections > 0,
+            failedSections,
           }), { headers: { 'Content-Type': 'application/json; charset=utf-8' } });
         }
 
@@ -1452,6 +1459,7 @@ body.dark .err{background:#3a1620;border-color:#5c2230;color:#fda4af;}
       <button class="abtn" id="cpbtn" onclick="cpTxt()">📋 Copy text</button>
       <button class="abtn" onclick="dlTxt()" id="uDlTxt">⬇ Download .txt</button>
       <button class="abtn" id="pdfBtn" onclick="dlPdf()">📄 Download PDF</button>
+      <button class="abtn" id="exfBtn" onclick="extractFormulas()">🧪 Extract formulas</button>
     </div>
     <div class="tabs">
       <div class="tab on" onclick="showTab('tr')" id="uTabTr">Transcript</div>
@@ -1532,7 +1540,7 @@ var T={
     analyze:'Analyze lecture →',copy:'📋 Copy text',dlTxt:'⬇ Download .txt',dlPdf:'📄 Download PDF',
     tabTr:'Transcript',tabFo:'Formulas',tabTe:'Terms',tabSu:'Summary',
     trTitle:'Full Transcript',fTitle:'Formulas & Equations',tTitle:'Technical Terms',sTitle:'Key Points',
-    noFormulas:'No formulas detected',noTerms:'No terms detected',noSummary:'No summary available',
+    noFormulas:'No formulas detected',exf:'🧪 Extract formulas',exfing:'🧪 Extracting…',exfFail:'Formula extraction failed — your transcript is safe below. Please try again.',exfPartial:'Some sections could not be analyzed — formulas may be incomplete.',noTerms:'No terms detected',noSummary:'No summary available',
     dark:'Dark mode',light:'Light mode',thLight:'Light',thDark:'Dark',thSystem:'System',large:'📦 Large file — will be split into chunks.',
     today:'Today',month:'Month',year:'Year',all:'Total',install:'Install app',iosHint:'To install: tap the Share button, then “Add to Home Screen”.'},
   ar:{badge:'مساعد المحاضرات',sub:'ارفع تسجيلاً — احصل على النص والمعادلات والمصطلحات والملخص',
@@ -1543,7 +1551,7 @@ var T={
     analyze:'تحليل المحاضرة ←',copy:'📋 نسخ النص',dlTxt:'⬇ تحميل .txt',dlPdf:'📄 تحميل PDF',
     tabTr:'النص',tabFo:'المعادلات',tabTe:'المصطلحات',tabSu:'الملخص',
     trTitle:'النص الكامل',fTitle:'المعادلات والصيغ',tTitle:'المصطلحات التقنية',sTitle:'النقاط الرئيسية',
-    noFormulas:'لم يتم اكتشاف معادلات',noTerms:'لم يتم اكتشاف مصطلحات',noSummary:'لا يوجد ملخص',
+    noFormulas:'لم يتم اكتشاف معادلات',exf:'🧪 استخراج الصيغ',exfing:'🧪 جارٍ الاستخراج…',exfFail:'فشل استخراج الصيغ — النص آمن أدناه. حاول مرة أخرى.',exfPartial:'تعذّر تحليل بعض الأقسام — قد تكون الصيغ غير مكتملة.',noTerms:'لم يتم اكتشاف مصطلحات',noSummary:'لا يوجد ملخص',
     dark:'الوضع المظلم',light:'الوضع الفاتح',thLight:'فاتح',thDark:'داكن',thSystem:'النظام',large:'📦 ملف كبير — سيتم تقسيمه.',
     today:'اليوم',month:'الشهر',year:'السنة',all:'الإجمالي',install:'تثبيت التطبيق',iosHint:'للتثبيت: اضغط زر المشاركة، ثم «إضافة إلى الشاشة الرئيسية».'},
   de:{badge:'KI Vorlesungsassistent',sub:'Lade eine Aufnahme hoch — erhalte Transkript, Formeln, Begriffe & Zusammenfassung',
@@ -1554,7 +1562,7 @@ var T={
     analyze:'Vorlesung analysieren →',copy:'📋 Text kopieren',dlTxt:'⬇ .txt herunterladen',dlPdf:'📄 PDF herunterladen',
     tabTr:'Transkript',tabFo:'Formeln',tabTe:'Begriffe',tabSu:'Zusammenfassung',
     trTitle:'Volles Transkript',fTitle:'Formeln & Gleichungen',tTitle:'Fachbegriffe',sTitle:'Kernpunkte',
-    noFormulas:'Keine Formeln erkannt',noTerms:'Keine Begriffe erkannt',noSummary:'Keine Zusammenfassung',
+    noFormulas:'Keine Formeln erkannt',exf:'🧪 Formeln extrahieren',exfing:'🧪 Wird extrahiert…',exfFail:'Formel-Extraktion fehlgeschlagen — Ihr Transkript ist unten sicher. Bitte erneut versuchen.',exfPartial:'Einige Abschnitte konnten nicht analysiert werden — Formeln sind möglicherweise unvollständig.',noTerms:'Keine Begriffe erkannt',noSummary:'Keine Zusammenfassung',
     dark:'Dunkelmodus',light:'Hellmodus',thLight:'Hell',thDark:'Dunkel',thSystem:'System',large:'📦 Große Datei — wird aufgeteilt.',
     today:'Heute',month:'Monat',year:'Jahr',all:'Gesamt',install:'App installieren',iosHint:'Zum Installieren: Tippe auf „Teilen“ und dann auf „Zum Home-Bildschirm“.'},
   fr:{badge:'Assistant IA de cours',sub:'Téléchargez un enregistrement — obtenez transcription, formules, termes & résumé',
@@ -1565,7 +1573,7 @@ var T={
     analyze:'Analyser le cours →',copy:'📋 Copier le texte',dlTxt:'⬇ Télécharger .txt',dlPdf:'📄 Télécharger PDF',
     tabTr:'Transcription',tabFo:'Formules',tabTe:'Termes',tabSu:'Résumé',
     trTitle:'Transcription complète',fTitle:'Formules & Équations',tTitle:'Termes techniques',sTitle:'Points clés',
-    noFormulas:'Aucune formule détectée',noTerms:'Aucun terme détecté',noSummary:'Aucun résumé disponible',
+    noFormulas:'Aucune formule détectée',exf:'🧪 Extraire les formules',exfing:'🧪 Extraction…',exfFail:'Échec de l’extraction des formules — votre transcription est en sécurité ci-dessous. Veuillez réessayer.',exfPartial:'Certaines sections n’ont pas pu être analysées — les formules peuvent être incomplètes.',noTerms:'Aucun terme détecté',noSummary:'Aucun résumé disponible',
     dark:'Mode sombre',light:'Mode clair',thLight:'Clair',thDark:'Sombre',thSystem:'Système',large:'📦 Fichier volumineux — sera divisé.',
     today:"Aujourd'hui",month:'Mois',year:'Année',all:'Total',install:'Installer l’app',iosHint:'Pour installer : touchez Partager, puis « Ajouter à l’écran d’accueil ».'},
   es:{badge:'Asistente IA de clases',sub:'Sube una grabación — obtén transcripción, fórmulas, términos y resumen',
@@ -1576,7 +1584,7 @@ var T={
     analyze:'Analizar clase →',copy:'📋 Copiar texto',dlTxt:'⬇ Descargar .txt',dlPdf:'📄 Descargar PDF',
     tabTr:'Transcripción',tabFo:'Fórmulas',tabTe:'Términos',tabSu:'Resumen',
     trTitle:'Transcripción completa',fTitle:'Fórmulas y Ecuaciones',tTitle:'Términos técnicos',sTitle:'Puntos clave',
-    noFormulas:'No se detectaron fórmulas',noTerms:'No se detectaron términos',noSummary:'No hay resumen disponible',
+    noFormulas:'No se detectaron fórmulas',exf:'🧪 Extraer fórmulas',exfing:'🧪 Extrayendo…',exfFail:'La extracción de fórmulas falló — tu transcripción está segura abajo. Inténtalo de nuevo.',exfPartial:'Algunas secciones no pudieron analizarse — las fórmulas pueden estar incompletas.',noTerms:'No se detectaron términos',noSummary:'No hay resumen disponible',
     dark:'Modo oscuro',light:'Modo claro',thLight:'Claro',thDark:'Oscuro',thSystem:'Sistema',large:'📦 Archivo grande — se dividirá.',
     today:'Hoy',month:'Mes',year:'Año',all:'Total',install:'Instalar la app',iosHint:'Para instalar: toca Compartir y luego «Añadir a la pantalla de inicio».'},
   ru:{badge:'ИИ-ассистент лекций',sub:'Загрузите запись — получите транскрипт, формулы, термины и резюме',
@@ -1587,7 +1595,7 @@ var T={
     analyze:'Анализировать лекцию →',copy:'📋 Копировать текст',dlTxt:'⬇ Скачать .txt',dlPdf:'📄 Скачать PDF',
     tabTr:'Транскрипт',tabFo:'Формулы',tabTe:'Термины',tabSu:'Резюме',
     trTitle:'Полный транскрипт',fTitle:'Формулы и уравнения',tTitle:'Технические термины',sTitle:'Ключевые моменты',
-    noFormulas:'Формулы не обнаружены',noTerms:'Термины не обнаружены',noSummary:'Резюме недоступно',
+    noFormulas:'Формулы не обнаружены',exf:'🧪 Извлечь формулы',exfing:'🧪 Извлечение…',exfFail:'Не удалось извлечь формулы — ваша расшифровка ниже в безопасности. Попробуйте ещё раз.',exfPartial:'Некоторые разделы не удалось проанализировать — формулы могут быть неполными.',noTerms:'Термины не обнаружены',noSummary:'Резюме недоступно',
     dark:'Тёмный режим',light:'Светлый режим',thLight:'Светлая',thDark:'Тёмная',thSystem:'Системная',large:'📦 Большой файл — будет разделён.',
     today:'Сегодня',month:'Месяц',year:'Год',all:'Всего',install:'Установить приложение',iosHint:'Чтобы установить: нажмите «Поделиться», а затем «На экран „Домой“».'},
   zh:{badge:'AI课堂助手',sub:'上传录音 — 获取文字稿、公式、术语和摘要',
@@ -1598,7 +1606,7 @@ var T={
     analyze:'分析课程 →',copy:'📋 复制文本',dlTxt:'⬇ 下载 .txt',dlPdf:'📄 下载 PDF',
     tabTr:'文字稿',tabFo:'公式',tabTe:'术语',tabSu:'摘要',
     trTitle:'完整文字稿',fTitle:'公式和方程',tTitle:'技术术语',sTitle:'要点',
-    noFormulas:'未检测到公式',noTerms:'未检测到术语',noSummary:'暂无摘要',
+    noFormulas:'未检测到公式',exf:'🧪 提取公式',exfing:'🧪 提取中…',exfFail:'公式提取失败——您的转录在下方完好无损。请重试。',exfPartial:'部分内容无法分析——公式可能不完整。',noTerms:'未检测到术语',noSummary:'暂无摘要',
     dark:'深色模式',light:'浅色模式',thLight:'浅色',thDark:'深色',thSystem:'系统',large:'📦 大文件 — 将被分割处理。',
     today:'今天',month:'本月',year:'本年',all:'总计',install:'安装应用',iosHint:'安装方法：点按“共享”按钮，然后点按“添加到主屏幕”。'},
   ja:{badge:'AI講義アシスタント',sub:'録音をアップロード — 文字起こし、数式、用語、要約を取得',
@@ -1609,7 +1617,7 @@ var T={
     analyze:'講義を分析 →',copy:'📋 テキストをコピー',dlTxt:'⬇ .txtをダウンロード',dlPdf:'📄 PDFをダウンロード',
     tabTr:'文字起こし',tabFo:'数式',tabTe:'用語',tabSu:'要約',
     trTitle:'全文字起こし',fTitle:'数式と方程式',tTitle:'専門用語',sTitle:'重要ポイント',
-    noFormulas:'数式が検出されませんでした',noTerms:'用語が検出されませんでした',noSummary:'要約がありません',
+    noFormulas:'数式が検出されませんでした',exf:'🧪 数式を抽出',exfing:'🧪 抽出中…',exfFail:'数式の抽出に失敗しました——文字起こしは下に安全にあります。再試行してください。',exfPartial:'一部のセクションを分析できませんでした——数式が不完全な可能性があります。',noTerms:'用語が検出されませんでした',noSummary:'要約がありません',
     dark:'ダークモード',light:'ライトモード',thLight:'ライト',thDark:'ダーク',thSystem:'システム',large:'📦 大きなファイル — 分割して処理します。',
     today:'今日',month:'今月',year:'今年',all:'合計',install:'アプリを入れる',iosHint:'インストールするには：共有ボタンをタップし、「ホーム画面に追加」を選択してください。'},
   tr:{badge:'Yapay Zeka Ders Asistanı',sub:'Kayıt yükle — transkript, formüller, terimler ve özet al',
@@ -1620,7 +1628,7 @@ var T={
     analyze:'Dersi analiz et →',copy:'📋 Metni kopyala',dlTxt:'⬇ .txt indir',dlPdf:'📄 PDF indir',
     tabTr:'Transkript',tabFo:'Formüller',tabTe:'Terimler',tabSu:'Özet',
     trTitle:'Tam Transkript',fTitle:'Formüller ve Denklemler',tTitle:'Teknik Terimler',sTitle:'Ana Noktalar',
-    noFormulas:'Formül tespit edilmedi',noTerms:'Terim tespit edilmedi',noSummary:'Özet mevcut değil',
+    noFormulas:'Formül tespit edilmedi',exf:'🧪 Formülleri çıkar',exfing:'🧪 Çıkarılıyor…',exfFail:'Formül çıkarma başarısız oldu — transkriptiniz aşağıda güvende. Lütfen tekrar deneyin.',exfPartial:'Bazı bölümler analiz edilemedi — formüller eksik olabilir.',noTerms:'Terim tespit edilmedi',noSummary:'Özet mevcut değil',
     dark:'Karanlık mod',light:'Aydınlık mod',thLight:'Açık',thDark:'Koyu',thSystem:'Sistem',large:'📦 Büyük dosya — parçalara bölünecek.',
     today:'Bugün',month:'Ay',year:'Yıl',all:'Toplam',install:'Uygulamayı yükle',iosHint:'Yüklemek için: Paylaş düğmesine, ardından «Ana Ekrana Ekle» seçeneğine dokunun.'},
   hi:{badge:'AI लेक्चर असिस्टेंट',sub:'रिकॉर्डिंग अपलोड करें — ट्रांसक्रिप्ट, फॉर्मूले, शब्द और सारांश पाएं',
@@ -1631,7 +1639,7 @@ var T={
     analyze:'लेक्चर विश्लेषण →',copy:'📋 टेक्स्ट कॉपी करें',dlTxt:'⬇ .txt डाउनलोड',dlPdf:'📄 PDF डाउनलोड',
     tabTr:'ट्रांसक्रिप्ट',tabFo:'फॉर्मूले',tabTe:'शब्द',tabSu:'सारांश',
     trTitle:'पूर्ण ट्रांसक्रिप्ट',fTitle:'फॉर्मूले और समीकरण',tTitle:'तकनीकी शब्द',sTitle:'मुख्य बिंदु',
-    noFormulas:'कोई फॉर्मूला नहीं मिला',noTerms:'कोई शब्द नहीं मिला',noSummary:'कोई सारांश उपलब्ध नहीं',
+    noFormulas:'कोई फॉर्मूला नहीं मिला',exf:'🧪 सूत्र निकालें',exfing:'🧪 निकाले जा रहे हैं…',exfFail:'सूत्र निकालना विफल रहा — आपका ट्रांसक्रिप्ट नीचे सुरक्षित है। कृपया फिर प्रयास करें।',exfPartial:'कुछ भागों का विश्लेषण नहीं हो सका — सूत्र अधूरे हो सकते हैं।',noTerms:'कोई शब्द नहीं मिला',noSummary:'कोई सारांश उपलब्ध नहीं',
     dark:'डार्क मोड',light:'लाइट मोड',thLight:'हल्का',thDark:'गहरा',thSystem:'सिस्टम',large:'📦 बड़ी फ़ाइल — टुकड़ों में विभाजित होगी।',
     today:'आज',month:'महीना',year:'साल',all:'कुल',install:'ऐप इंस्टॉल करें',iosHint:'इंस्टॉल करने के लिए: शेयर बटन दबाएँ, फिर «होम स्क्रीन पर जोड़ें» चुनें।'},
   pt:{badge:'Assistente de Aulas com IA',sub:'Envie uma gravação — obtenha transcrição, fórmulas, termos e resumo',
@@ -1642,7 +1650,7 @@ var T={
     analyze:'Analisar aula →',copy:'📋 Copiar texto',dlTxt:'⬇ Baixar .txt',dlPdf:'📄 Baixar PDF',
     tabTr:'Transcrição',tabFo:'Fórmulas',tabTe:'Termos',tabSu:'Resumo',
     trTitle:'Transcrição completa',fTitle:'Fórmulas e Equações',tTitle:'Termos técnicos',sTitle:'Pontos principais',
-    noFormulas:'Nenhuma fórmula detectada',noTerms:'Nenhum termo detectado',noSummary:'Nenhum resumo disponível',
+    noFormulas:'Nenhuma fórmula detectada',exf:'🧪 Extrair fórmulas',exfing:'🧪 Extraindo…',exfFail:'A extração de fórmulas falhou — sua transcrição está segura abaixo. Tente novamente.',exfPartial:'Algumas seções não puderam ser analisadas — as fórmulas podem estar incompletas.',noTerms:'Nenhum termo detectado',noSummary:'Nenhum resumo disponível',
     dark:'Modo escuro',light:'Modo claro',thLight:'Claro',thDark:'Escuro',thSystem:'Sistema',large:'📦 Arquivo grande — será dividido.',
     today:'Hoje',month:'Mês',year:'Ano',all:'Total',install:'Instalar o app',iosHint:'Para instalar: toque em Compartilhar e depois em «Adicionar à Tela de Início».'}
 };
@@ -1658,7 +1666,7 @@ function setLang(l){
   s('uRecLabel',t.recLabel); s('uDropH',t.dropH); s('uDropP',t.dropP); s('uNote',t.note);
   s('uExtLabel',t.extLabel); s('uFormulas',t.formulas); s('uTerms',t.terms); s('uSummary',t.summary);
   s('uModelLabel',t.modelLabel); s('uMLarge',t.mLarge); s('uMLargeSub',t.mLargeSub); s('uMTurbo',t.mTurbo); s('uMTurboSub',t.mTurboSub);
-  s('uDlTxt',t.dlTxt); s('pdfBtn',t.dlPdf);
+  s('uDlTxt',t.dlTxt); s('pdfBtn',t.dlPdf); s('exfBtn',t.exf);
   s('uTabTr',t.tabTr); s('uTabFo',t.tabFo); s('uTabTe',t.tabTe); s('uTabSu',t.tabSu);
   s('uTrTitle',t.trTitle); s('uFTitle',t.fTitle); s('uTTitle',t.tTitle); s('uSTitle',t.sTitle);
   s('uNoFormulas',t.noFormulas);
@@ -1859,18 +1867,37 @@ async function run(){
     }
     var tx=parts.join(' ');
     if(!tx||tx.length<10)throw new Error('Transcript empty \u2014 check your audio file');
+    rData={formulas:[],terms:[],points:[],transcript:tx};
+    render(opts);
     prog(70,'\uD83D\uDD2C Analyzing lecture...');
     var fd=new FormData();
     fd.append('action','analyze');fd.append('text',tx);
     fd.append('opts',JSON.stringify(opts));
-    var r=await fetch('/process',{method:'POST',body:fd});
-    var j=await r.text();
-    if(!r.ok)throw new Error(j);
+    var analysisFailed=false;
+    var ac=new AbortController();
+    var acTimer=setTimeout(function(){ac.abort();},180000);
+    try{
+      var r=await fetch('/process',{method:'POST',body:fd,signal:ac.signal});
+      var j=await r.text();
+      if(!r.ok)throw new Error(j);
+      rData=JSON.parse(j);
+    }catch(ae){
+      // Analysis is best-effort: never throw away a finished transcript
+      // because formula/term extraction failed.
+      analysisFailed=true;
+      rData={formulas:[],terms:[],points:[]};
+    }
+    clearTimeout(acTimer);
     prog(100,'\u2705 Done!');
-    rData=JSON.parse(j);rData.transcript=tx;
+    rData.transcript=tx;
+    render(opts);
+    if(analysisFailed){
+      document.getElementById('err').textContent='\u26a0\ufe0f Analysis failed \u2014 your transcript is ready below, but formulas, terms and summary could not be extracted this time.';
+      document.getElementById('err').style.display='block';
+    }
     render(opts);
   }catch(e){
-    document.getElementById('err').textContent='Error: '+e.message;
+    document.getElementById('err').textContent='Error: '+String(e.message||'').replace(/^Error: /,'');
     document.getElementById('err').style.display='block';
   }finally{
     document.getElementById('loading').style.display='none';
@@ -1967,6 +1994,45 @@ function render(opts){
 
   document.getElementById('result').style.display='block';
   showTab('tr');
+}
+
+
+async function extractFormulas(){
+  if(!rData||!rData.transcript)return;
+  if(document.getElementById('loading').style.display==='block')return; // main pipeline still running
+  var t=T[curLang]||T.en;
+  var btn=document.getElementById('exfBtn');
+  if(!btn||btn.disabled)return;
+  btn.disabled=true;
+  var old=btn.textContent;
+  btn.textContent=t.exfing;
+  var ac=new AbortController();
+  var tm=setTimeout(function(){ac.abort();},180000);
+  try{
+    var fd=new FormData();
+    fd.append('action','analyze');fd.append('text',rData.transcript);
+    fd.append('opts',JSON.stringify({formulas:true,terms:false,summary:false}));
+    var r=await fetch('/process',{method:'POST',body:fd,signal:ac.signal});
+    var j=await r.text();
+    if(!r.ok)throw new Error(j);
+    var res=JSON.parse(j);
+    rData.formulas=Array.isArray(res.formulas)?res.formulas:[];
+    render({formulas:true,terms:true,summary:true});
+    showTab('fo');
+    if(res.partial){
+      var ep=document.getElementById('err');
+      ep.textContent='\u26a0\ufe0f '+t.exfPartial;
+      ep.style.display='block';
+    }
+  }catch(e){
+    var ef=document.getElementById('err');
+    ef.textContent='\u26a0\ufe0f '+t.exfFail;
+    ef.style.display='block';
+  }finally{
+    clearTimeout(tm);
+    btn.disabled=false;
+    btn.textContent=old;
+  }
 }
 
 function getTx(){return rData.transcript||'';}
