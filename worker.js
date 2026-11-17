@@ -120,7 +120,7 @@ const PWA_MANIFEST = {
     { src: '/icon-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' }
   ]
 };
-const PWA_SW = `const CACHE='lf-pwa-v316';
+const PWA_SW = `const CACHE='lf-pwa-v3161';
 const CORE=['/icon-192.png','/icon-512.png','/icon-maskable-512.png','/apple-touch-icon.png'];
 self.addEventListener('install',function(e){e.waitUntil(caches.open(CACHE).then(function(c){return c.addAll(CORE).then(function(){return caches.match('/');}).then(function(old){if(old)return c.put('/',old);});}).then(function(){return self.skipWaiting();}));});
 self.addEventListener('activate',function(e){e.waitUntil(caches.keys().then(function(ks){return Promise.all(ks.filter(function(k){return k!==CACHE;}).map(function(k){return caches.delete(k);}));}).then(function(){return self.clients.claim();}));});
@@ -1881,6 +1881,7 @@ async function run(){
       var j=await r.text();
       if(!r.ok)throw new Error(j);
       rData=JSON.parse(j);
+      if(rData.partial&&(opts.formulas||opts.terms||opts.summary)&&!(rData.formulas||[]).length&&!(rData.terms||[]).length&&!(rData.points||[]).length)analysisFailed=true;
     }catch(ae){
       // Analysis is best-effort: never throw away a finished transcript
       // because formula/term extraction failed.
@@ -1893,6 +1894,9 @@ async function run(){
     render(opts);
     if(analysisFailed){
       document.getElementById('err').textContent='\u26a0\ufe0f Analysis failed \u2014 your transcript is ready below, but formulas, terms and summary could not be extracted this time.';
+      document.getElementById('err').style.display='block';
+    } else if(rData.partial){
+      document.getElementById('err').textContent='\u26a0\ufe0f '+(T[curLang]||T.en).exfPartial;
       document.getElementById('err').style.display='block';
     }
     render(opts);
